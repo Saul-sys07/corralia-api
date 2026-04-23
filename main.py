@@ -15,7 +15,11 @@ app = FastAPI(title="Corralia API v4")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "https://corralia-react-h0e10gno8-saul-sys07s-projects.vercel.app"],
+    allow_origins=[
+    "http://localhost:5173",
+    "https://corralia-react.vercel.app",
+    "https://corralia-react-h0e10gno8-saul-sys07s-projects.vercel.app"
+],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
