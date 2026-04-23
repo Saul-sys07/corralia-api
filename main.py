@@ -892,3 +892,14 @@ def reset_nuclear(data: NuclearRequest, usuario=Depends(verificar_token)):
                WHERE rol != 'admin' AND pin_temporal IS NOT NULL""")
     
     return {"ok": True, "mensaje": "Sistema limpiado — listo para datos reales"}
+# ── Historial asistencias ─────────────────────────────────────────────────────
+@app.get("/checador/historial")
+def get_historial_asistencias(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT a.id, a.usuario_id, a.nombre, 
+               a.fecha_entrada, a.fecha_salida,
+               a.foto_entrada, a.foto_salida
+        FROM asistencia a
+        ORDER BY a.fecha_entrada DESC
+        LIMIT 100
+    """)
