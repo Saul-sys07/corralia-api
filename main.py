@@ -903,3 +903,47 @@ def get_historial_asistencias(usuario=Depends(verificar_token)):
         ORDER BY a.fecha_entrada DESC
         LIMIT 100
     """)
+# ── Foto checador ─────────────────────────────────────────────────────────────
+import cloudinary
+import cloudinary.uploader
+import base64
+import os
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
+
+class FotoChecadorRequest(BaseModel):
+    foto_base64: str
+    tipo: str  # 'entrada' o 'salida'
+
+@app.post("/checador/foto")
+def subir_foto_checador(data: FotoChecadorRequest, usuario=Depends(verificar_token)):
+    from datetime import date
+    hoy = date.today()
+    
+    nombre_foto = f"corralia/checador/{usuario['nombre']}_{data.tipo}_{hoy}"
+    resultado = cloudinary.uploader.upload(
+        f"data:image/jpeg;base64,{data.foto_base64}",
+        public_id=nombre_foto,
+        overwrite=True
+    )
+    url = resultado["secure_url"]
+    
+    # Actualizar la URL en asistencia
+    if data.tipo == 'entrada':
+        execute(
+            """UPDATE asistencia SET foto_entrada = %s 
+               WHERE usuario_id = %s AND DATE(fecha_entrada) = %s""",
+            (url, usuario["id"], hoy)
+        )
+    else:
+        execute(
+            """UPDATE asistencia SET foto_salida = %s 
+               WHERE usuario_id = %s AND DATE(fecha_entrada) = %s""",
+            (url, usuario["id"], hoy)
+        )
+    
+    return {"ok": True, "url": url}
