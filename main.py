@@ -865,12 +865,10 @@ def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
         (data.nombre, data.tipo, data.zona, data.largo, data.ancho, area, data.capacidad_max)
     )
     return {"ok": True}
+
 class NuclearRequest(BaseModel):
     confirmacion: str
 
-@app.post("/configuracion/nuclear")
-def reset_nuclear(data: NuclearRequest, usuario=Depends(verificar_token)):
-    ...
 @app.post("/configuracion/nuclear")
 def reset_nuclear(data: NuclearRequest, usuario=Depends(verificar_token)):
     if data.confirmacion != "BORRAR TODO":
