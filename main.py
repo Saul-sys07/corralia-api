@@ -823,15 +823,12 @@ class CorralEditRequest(BaseModel):
     largo: float | None = None
     ancho: float | None = None
 
-@app.put("/configuracion/corrales/{corral_id}")
-def editar_corral(corral_id: int, data: CorralEditRequest, usuario=Depends(verificar_token)):
-    area = data.largo * data.ancho if data.largo and data.ancho else None
+@app.post("/configuracion/corrales")
+def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
     execute(
-        """UPDATE chiqueros SET nombre=%s, tipo=%s, zona=%s,
-           capacidad_max=%s, largo=%s, ancho=%s, area_m2=%s
-           WHERE id=%s""",
-        (data.nombre, data.tipo, data.zona, data.capacidad_max,
-         data.largo, data.ancho, area, corral_id)
+        """INSERT INTO chiqueros (nombre, tipo, zona, largo, ancho, capacidad_max)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        (data.nombre, data.tipo, data.zona, data.largo, data.ancho, data.capacidad_max)
     )
     return {"ok": True}
 
