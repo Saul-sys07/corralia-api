@@ -945,3 +945,22 @@ def subir_foto_checador(data: FotoChecadorRequest, usuario=Depends(verificar_tok
         )
     
     return {"ok": True, "url": url}
+class CorralEditRequest(BaseModel):
+    nombre: str
+    tipo: str
+    zona: str
+    capacidad_max: int
+    largo: float | None = None
+    ancho: float | None = None
+
+@app.put("/configuracion/corrales/{corral_id}")
+def editar_corral(corral_id: int, data: CorralEditRequest, usuario=Depends(verificar_token)):
+    area = data.largo * data.ancho if data.largo and data.ancho else None
+    execute(
+        """UPDATE chiqueros SET nombre=%s, tipo=%s, zona=%s, 
+           capacidad_max=%s, largo=%s, ancho=%s, area_m2=%s
+           WHERE id=%s""",
+        (data.nombre, data.tipo, data.zona, data.capacidad_max,
+         data.largo, data.ancho, area, corral_id)
+    )
+    return {"ok": True}
