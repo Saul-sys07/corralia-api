@@ -858,7 +858,7 @@ class CorralRequest(BaseModel):
 
 @app.post("/configuracion/corrales")
 def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
-    area = data.largo * data.ancho
+    area = data.largo * data.ancho if data.largo and data.ancho else None
     execute(
         """INSERT INTO chiqueros (nombre, tipo, zona, largo, ancho, area_m2, capacidad_max)
            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
