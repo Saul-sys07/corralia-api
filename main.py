@@ -852,8 +852,8 @@ class CorralRequest(BaseModel):
     nombre: str
     tipo: str
     zona: str
-    largo: float
-    ancho: float
+    largo: float | None = None
+    ancho: float | None = None
     capacidad_max: int
 
 @app.post("/configuracion/corrales")
