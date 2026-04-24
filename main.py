@@ -6,20 +6,28 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import jwt
 import os
+import cloudinary
+import cloudinary.uploader
 from dotenv import load_dotenv
 from database import fetch_one, fetch_all, execute
 
 load_dotenv()
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
 
 app = FastAPI(title="Corralia API v4")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-    "http://localhost:5173",
-    "https://corralia-react.vercel.app",
-    "https://corralia-react-h0e10gno8-saul-sys07s-projects.vercel.app"
-],
+        "http://localhost:5173",
+        "https://corralia-react.vercel.app",
+        "https://corralia-react-h0e10gno8-saul-sys07s-projects.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -286,7 +294,6 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
          usuario["nombre"],
          f"Venta — ${data.total_rancho:,.2f}", hora_mexico())
     )
-    # Actualizar ciclo de vida del cliente
     cliente_actual = fetch_one("SELECT tipo FROM clientes WHERE id = %s", (data.cliente_id,))
     if cliente_actual:
         if cliente_actual["tipo"] in ("Nuevo", "Recuperado"):
@@ -527,6 +534,46 @@ def registrar_salida(usuario=Depends(verificar_token)):
     )
     return {"ok": True}
 
+@app.get("/checador/historial")
+def get_historial_asistencias(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT a.id, a.usuario_id, a.nombre,
+               a.fecha_entrada, a.fecha_salida,
+               a.foto_entrada, a.foto_salida
+        FROM asistencia a
+        ORDER BY a.fecha_entrada DESC
+        LIMIT 100
+    """)
+
+class FotoChecadorRequest(BaseModel):
+    foto_base64: str
+    tipo: str
+
+@app.post("/checador/foto")
+def subir_foto_checador(data: FotoChecadorRequest, usuario=Depends(verificar_token)):
+    from datetime import date
+    hoy = date.today()
+    nombre_foto = f"corralia/checador/{usuario['nombre']}_{data.tipo}_{hoy}"
+    resultado = cloudinary.uploader.upload(
+        f"data:image/jpeg;base64,{data.foto_base64}",
+        public_id=nombre_foto,
+        overwrite=True
+    )
+    url = resultado["secure_url"]
+    if data.tipo == 'entrada':
+        execute(
+            """UPDATE asistencia SET foto_entrada = %s
+               WHERE usuario_id = %s AND DATE(fecha_entrada) = %s""",
+            (url, usuario["id"], hoy)
+        )
+    else:
+        execute(
+            """UPDATE asistencia SET foto_salida = %s
+               WHERE usuario_id = %s AND DATE(fecha_entrada) = %s""",
+            (url, usuario["id"], hoy)
+        )
+    return {"ok": True, "url": url}
+
 # ── Vacunas ───────────────────────────────────────────────────────────────────
 @app.get("/vacunas/historial")
 def get_historial_vacunas(usuario=Depends(verificar_token)):
@@ -644,6 +691,7 @@ def actualizar_ciclo_clientes(usuario=Depends(verificar_token)):
         AND (ultimo_pedido IS NULL OR ultimo_pedido < %s)
     """, (hace_un_anio,))
     return {"ok": True}
+
 # ── Ventas historial ──────────────────────────────────────────────────────────
 @app.get("/ventas/historial")
 def get_historial_ventas(usuario=Depends(verificar_token)):
@@ -672,6 +720,7 @@ def get_comisiones(usuario=Depends(verificar_token)):
         GROUP BY v.usuario_id
         ORDER BY total_comision DESC
     """)
+
 # ── Configuracion ─────────────────────────────────────────────────────────────
 @app.get("/configuracion/precio")
 def get_precio(usuario=Depends(verificar_token)):
@@ -695,39 +744,6 @@ def get_corrales(usuario=Depends(verificar_token)):
         FROM chiqueros ORDER BY zona, nombre
     """)
 
-# ── Usuarios ──────────────────────────────────────────────────────────────────
-@app.get("/usuarios")
-def get_usuarios(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT id, nombre, rol, activo, ultimo_acceso
-        FROM usuarios ORDER BY nombre
-    """)
-
-class UsuarioRequest(BaseModel):
-    nombre: str
-    rol: str
-    pin_temporal: str
-
-@app.post("/usuarios")
-def crear_usuario(data: UsuarioRequest, usuario=Depends(verificar_token)):
-    existente = fetch_one("SELECT id FROM usuarios WHERE nombre = %s", (data.nombre,))
-    if existente:
-        raise HTTPException(status_code=400, detail="Ya existe un usuario con ese nombre")
-    execute(
-        """INSERT INTO usuarios (nombre, pin, pin_temporal, rol, primer_acceso)
-           VALUES (%s, %s, %s, %s, 1)""",
-        (data.nombre, data.pin_temporal, data.pin_temporal, data.rol)
-    )
-    return {"ok": True}
-
-@app.post("/usuarios/toggle")
-def toggle_usuario(usuario_id: int, usuario=Depends(verificar_token)):
-    execute(
-        "UPDATE usuarios SET activo = NOT activo WHERE id = %s",
-        (usuario_id,)
-    )
-    return {"ok": True}
-# ── Estado Pie de Cria ────────────────────────────────────────────────────────
 @app.get("/configuracion/pie-de-cria")
 def get_pie_de_cria(usuario=Depends(verificar_token)):
     return fetch_all("""
@@ -759,72 +775,6 @@ def actualizar_pie_de_cria(data: PieCriaUpdate, usuario=Depends(verificar_token)
         (data.estado, fecha_monta, fecha_parto, data.lote_id)
     )
     return {"ok": True}
-
-# ── Restablecer PIN ───────────────────────────────────────────────────────────
-class ResetPinRequest(BaseModel):
-    usuario_id: int
-    nuevo_pin: str
-
-@app.post("/usuarios/reset-pin")
-def reset_pin(data: ResetPinRequest, usuario=Depends(verificar_token)):
-    execute(
-        "UPDATE usuarios SET pin = %s, pin_temporal = %s, primer_acceso = 1 WHERE id = %s",
-        (data.nuevo_pin, data.nuevo_pin, data.usuario_id)
-    )
-    return {"ok": True}
-class ActivarRequest(BaseModel):
-    usuario_id: int
-    nuevo_pin: str
-
-class ActivarRequest(BaseModel):
-    usuario_id: int
-    nuevo_pin: str
-
-@app.post("/usuarios/activar")
-def activar_usuario(data: ActivarRequest):
-    existente = fetch_one(
-        "SELECT id FROM usuarios WHERE pin = %s AND id != %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    if existente:
-        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
-    execute(
-        "UPDATE usuarios SET pin = %s, pin_temporal = NULL, primer_acceso = 0 WHERE id = %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    return {"ok": True}
-@app.post("/usuarios/activar")
-def activar_usuario(data: ActivarRequest):
-    existente = fetch_one(
-        "SELECT id FROM usuarios WHERE pin = %s AND id != %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    if existente:
-        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
-    execute(
-        "UPDATE usuarios SET pin = %s, pin_temporal = NULL, primer_acceso = 0 WHERE id = %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    return {"ok": True}
-
-@app.post("/usuarios/reset-pin")
-def reset_pin(data: ResetPinRequest, usuario=Depends(verificar_token)):
-    existente = fetch_one(
-        "SELECT id FROM usuarios WHERE pin = %s AND id != %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    if existente:
-        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
-    execute(
-        "UPDATE usuarios SET pin = %s, pin_temporal = %s, primer_acceso = 1 WHERE id = %s",
-        (data.nuevo_pin, data.nuevo_pin, data.usuario_id)
-    )
-    return {"ok": True}
-# ── Registrar animales y corrales ─────────────────────────────────────────────
-@app.get("/configuracion/tipos-animal")
-def get_tipos_animal(usuario=Depends(verificar_token)):
-    return {"tipos": ["Semental", "Pie de Cría", "Crías", "Destete", 
-                      "Desarrollo", "Engorda", "Herniados", "Desecho"]}
 
 class AnimalRequest(BaseModel):
     id_chiquero: int
@@ -866,85 +816,6 @@ def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
     )
     return {"ok": True}
 
-class NuclearRequest(BaseModel):
-    confirmacion: str
-
-@app.post("/configuracion/nuclear")
-def reset_nuclear(data: NuclearRequest, usuario=Depends(verificar_token)):
-    if data.confirmacion != "BORRAR TODO":
-        raise HTTPException(status_code=400, detail="Confirmación incorrecta")
-    if usuario["rol"] != "admin":
-        raise HTTPException(status_code=403, detail="Solo el admin puede hacer esto")
-    
-    execute("DELETE FROM asistencia")
-    execute("DELETE FROM historial_movimientos")
-    execute("DELETE FROM vacunaciones")
-    execute("DELETE FROM ventas")
-    execute("DELETE FROM finanzas")
-    execute("DELETE FROM almacen")
-    execute("DELETE FROM clientes")
-    execute("""UPDATE lotes SET poblacion_actual = 0, 
-               estado_pie_cria = NULL, fecha_monta = NULL, 
-               fecha_parto_estimada = NULL""")
-    execute("""UPDATE usuarios SET primer_acceso = 1, pin = pin_temporal 
-               WHERE rol != 'admin' AND pin_temporal IS NOT NULL""")
-    
-    return {"ok": True, "mensaje": "Sistema limpiado — listo para datos reales"}
-# ── Historial asistencias ─────────────────────────────────────────────────────
-@app.get("/checador/historial")
-def get_historial_asistencias(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT a.id, a.usuario_id, a.nombre, 
-               a.fecha_entrada, a.fecha_salida,
-               a.foto_entrada, a.foto_salida
-        FROM asistencia a
-        ORDER BY a.fecha_entrada DESC
-        LIMIT 100
-    """)
-# ── Foto checador ─────────────────────────────────────────────────────────────
-import cloudinary
-import cloudinary.uploader
-import base64
-import os
-
-cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET")
-)
-
-class FotoChecadorRequest(BaseModel):
-    foto_base64: str
-    tipo: str  # 'entrada' o 'salida'
-
-@app.post("/checador/foto")
-def subir_foto_checador(data: FotoChecadorRequest, usuario=Depends(verificar_token)):
-    from datetime import date
-    hoy = date.today()
-    
-    nombre_foto = f"corralia/checador/{usuario['nombre']}_{data.tipo}_{hoy}"
-    resultado = cloudinary.uploader.upload(
-        f"data:image/jpeg;base64,{data.foto_base64}",
-        public_id=nombre_foto,
-        overwrite=True
-    )
-    url = resultado["secure_url"]
-    
-    # Actualizar la URL en asistencia
-    if data.tipo == 'entrada':
-        execute(
-            """UPDATE asistencia SET foto_entrada = %s 
-               WHERE usuario_id = %s AND DATE(fecha_entrada) = %s""",
-            (url, usuario["id"], hoy)
-        )
-    else:
-        execute(
-            """UPDATE asistencia SET foto_salida = %s 
-               WHERE usuario_id = %s AND DATE(fecha_entrada) = %s""",
-            (url, usuario["id"], hoy)
-        )
-    
-    return {"ok": True, "url": url}
 class CorralEditRequest(BaseModel):
     nombre: str
     tipo: str
@@ -957,10 +828,102 @@ class CorralEditRequest(BaseModel):
 def editar_corral(corral_id: int, data: CorralEditRequest, usuario=Depends(verificar_token)):
     area = data.largo * data.ancho if data.largo and data.ancho else None
     execute(
-        """UPDATE chiqueros SET nombre=%s, tipo=%s, zona=%s, 
+        """UPDATE chiqueros SET nombre=%s, tipo=%s, zona=%s,
            capacidad_max=%s, largo=%s, ancho=%s, area_m2=%s
            WHERE id=%s""",
         (data.nombre, data.tipo, data.zona, data.capacidad_max,
          data.largo, data.ancho, area, corral_id)
+    )
+    return {"ok": True}
+
+class NuclearRequest(BaseModel):
+    confirmacion: str
+
+@app.post("/configuracion/nuclear")
+def reset_nuclear(data: NuclearRequest, usuario=Depends(verificar_token)):
+    if data.confirmacion != "BORRAR TODO":
+        raise HTTPException(status_code=400, detail="Confirmación incorrecta")
+    if usuario["rol"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo el admin puede hacer esto")
+    execute("DELETE FROM asistencia")
+    execute("DELETE FROM historial_movimientos")
+    execute("DELETE FROM vacunaciones")
+    execute("DELETE FROM ventas")
+    execute("DELETE FROM finanzas")
+    execute("DELETE FROM almacen")
+    execute("DELETE FROM clientes")
+    execute("""UPDATE lotes SET poblacion_actual = 0,
+               estado_pie_cria = NULL, fecha_monta = NULL,
+               fecha_parto_estimada = NULL""")
+    execute("""UPDATE usuarios SET primer_acceso = 1, pin = pin_temporal
+               WHERE rol != 'admin' AND pin_temporal IS NOT NULL""")
+    return {"ok": True, "mensaje": "Sistema limpiado — listo para datos reales"}
+
+# ── Usuarios ──────────────────────────────────────────────────────────────────
+@app.get("/usuarios")
+def get_usuarios(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT id, nombre, rol, activo, ultimo_acceso
+        FROM usuarios ORDER BY nombre
+    """)
+
+class UsuarioRequest(BaseModel):
+    nombre: str
+    rol: str
+    pin_temporal: str
+
+@app.post("/usuarios")
+def crear_usuario(data: UsuarioRequest, usuario=Depends(verificar_token)):
+    existente = fetch_one("SELECT id FROM usuarios WHERE nombre = %s", (data.nombre,))
+    if existente:
+        raise HTTPException(status_code=400, detail="Ya existe un usuario con ese nombre")
+    execute(
+        """INSERT INTO usuarios (nombre, pin, pin_temporal, rol, primer_acceso)
+           VALUES (%s, %s, %s, %s, 1)""",
+        (data.nombre, data.pin_temporal, data.pin_temporal, data.rol)
+    )
+    return {"ok": True}
+
+@app.post("/usuarios/toggle")
+def toggle_usuario(usuario_id: int, usuario=Depends(verificar_token)):
+    execute(
+        "UPDATE usuarios SET activo = NOT activo WHERE id = %s",
+        (usuario_id,)
+    )
+    return {"ok": True}
+
+class ActivarRequest(BaseModel):
+    usuario_id: int
+    nuevo_pin: str
+
+@app.post("/usuarios/activar")
+def activar_usuario(data: ActivarRequest):
+    existente = fetch_one(
+        "SELECT id FROM usuarios WHERE pin = %s AND id != %s",
+        (data.nuevo_pin, data.usuario_id)
+    )
+    if existente:
+        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
+    execute(
+        "UPDATE usuarios SET pin = %s, pin_temporal = NULL, primer_acceso = 0 WHERE id = %s",
+        (data.nuevo_pin, data.usuario_id)
+    )
+    return {"ok": True}
+
+class ResetPinRequest(BaseModel):
+    usuario_id: int
+    nuevo_pin: str
+
+@app.post("/usuarios/reset-pin")
+def reset_pin(data: ResetPinRequest, usuario=Depends(verificar_token)):
+    existente = fetch_one(
+        "SELECT id FROM usuarios WHERE pin = %s AND id != %s",
+        (data.nuevo_pin, data.usuario_id)
+    )
+    if existente:
+        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
+    execute(
+        "UPDATE usuarios SET pin = %s, pin_temporal = %s, primer_acceso = 1 WHERE id = %s",
+        (data.nuevo_pin, data.nuevo_pin, data.usuario_id)
     )
     return {"ok": True}
