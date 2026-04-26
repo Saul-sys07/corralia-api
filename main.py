@@ -944,3 +944,13 @@ def subir_foto_ticket(data: FotoTicketRequest, usuario=Depends(verificar_token))
         (url, usuario["nombre"], hora_mexico())
     )
     return {"ok": True, "url": url}
+
+@app.get("/almacen/tickets")
+def get_tickets(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT notas AS url, usuario_id, fecha
+        FROM almacen
+        WHERE tipo = 'ticket'
+        ORDER BY fecha DESC
+        LIMIT 50
+    """)
