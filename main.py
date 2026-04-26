@@ -422,8 +422,8 @@ def get_depositos(usuario=Depends(verificar_token)):
 
 @app.get("/finanzas/nomina")
 def get_nomina(usuario=Depends(verificar_token)):
-    from datetime import date, timedelta
-    hoy = date.today()
+    hoy = hora_mexico().date()
+    from datetime import timedelta
     lunes = hoy - timedelta(days=hoy.weekday())
     domingo = lunes + timedelta(days=6)
     return fetch_all("""
@@ -494,8 +494,7 @@ def actualizar_sueldo(data: SueldoConfig, usuario=Depends(verificar_token)):
 # ── Checador ──────────────────────────────────────────────────────────────────
 @app.get("/checador/estado")
 def get_estado_checador(usuario=Depends(verificar_token)):
-    from datetime import date
-    hoy = date.today()
+    hoy = hora_mexico().date()
     entrada = fetch_one("""
         SELECT id, fecha_entrada FROM asistencia
         WHERE usuario_id = %s AND DATE(fecha_entrada) = %s
@@ -524,8 +523,7 @@ def registrar_entrada(usuario=Depends(verificar_token)):
 
 @app.post("/checador/salida")
 def registrar_salida(usuario=Depends(verificar_token)):
-    from datetime import date
-    hoy = date.today()
+    hoy = hora_mexico().date()
     execute(
         """UPDATE asistencia SET fecha_salida = %s
            WHERE usuario_id = %s AND DATE(fecha_entrada) = %s
@@ -551,8 +549,7 @@ class FotoChecadorRequest(BaseModel):
 
 @app.post("/checador/foto")
 def subir_foto_checador(data: FotoChecadorRequest, usuario=Depends(verificar_token)):
-    from datetime import date
-    hoy = date.today()
+    hoy = hora_mexico().date()
     nombre_foto = f"corralia/checador/{usuario['nombre']}_{data.tipo}_{hoy}"
     resultado = cloudinary.uploader.upload(
         f"data:image/jpeg;base64,{data.foto_base64}",
@@ -762,7 +759,7 @@ class PieCriaUpdate(BaseModel):
 
 @app.post("/configuracion/pie-de-cria")
 def actualizar_pie_de_cria(data: PieCriaUpdate, usuario=Depends(verificar_token)):
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     fecha_parto = None
     fecha_monta = None
     if data.fecha_monta:
@@ -823,12 +820,14 @@ class CorralEditRequest(BaseModel):
     largo: float | None = None
     ancho: float | None = None
 
-@app.post("/configuracion/corrales")
-def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
+@app.put("/configuracion/corrales/{corral_id}")
+def editar_corral(corral_id: int, data: CorralEditRequest, usuario=Depends(verificar_token)):
     execute(
-        """INSERT INTO chiqueros (nombre, tipo, zona, largo, ancho, capacidad_max)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
-        (data.nombre, data.tipo, data.zona, data.largo, data.ancho, data.capacidad_max)
+        """UPDATE chiqueros SET nombre=%s, tipo=%s, zona=%s,
+           capacidad_max=%s, largo=%s, ancho=%s
+           WHERE id=%s""",
+        (data.nombre, data.tipo, data.zona, data.capacidad_max,
+         data.largo, data.ancho, corral_id)
     )
     return {"ok": True}
 
