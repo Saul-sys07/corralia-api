@@ -922,3 +922,25 @@ def reset_pin(data: ResetPinRequest, usuario=Depends(verificar_token)):
         (data.nuevo_pin, data.nuevo_pin, data.usuario_id)
     )
     return {"ok": True}
+
+class FotoTicketRequest(BaseModel):
+    foto_base64: str
+    compra_notas: str = ''
+
+@app.post("/almacen/foto-ticket")
+def subir_foto_ticket(data: FotoTicketRequest, usuario=Depends(verificar_token)):
+    hoy = hora_mexico().date()
+    nombre_foto = f"corralia/tickets/{usuario['nombre']}_{hoy}_{hora_mexico().strftime('%H%M%S')}"
+    resultado = cloudinary.uploader.upload(
+        f"data:image/jpeg;base64,{data.foto_base64}",
+        public_id=nombre_foto,
+        overwrite=False
+    )
+    url = resultado["secure_url"]
+    execute(
+        """INSERT INTO almacen
+           (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha)
+           VALUES ('ticket', 'Evidencia', 'Foto ticket', 1, 'pieza', NULL, %s, %s, %s)""",
+        (url, usuario["nombre"], hora_mexico())
+    )
+    return {"ok": True, "url": url}
