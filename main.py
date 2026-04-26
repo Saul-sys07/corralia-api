@@ -954,3 +954,49 @@ def get_tickets(usuario=Depends(verificar_token)):
         ORDER BY fecha DESC
         LIMIT 50
     """)
+# ── Raciones ──────────────────────────────────────────────────────────────────
+@app.get("/almacen/raciones")
+def get_raciones(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT r.id, r.id_chiquero, c.nombre AS corral, c.zona,
+               r.producto, r.cantidad, r.unidad, r.ultima_actualizacion
+        FROM raciones r
+        JOIN chiqueros c ON c.id = r.id_chiquero
+        ORDER BY c.zona, c.nombre
+    """)
+
+class RacionRequest(BaseModel):
+    id_chiquero: int
+    producto: str
+    cantidad: float
+    unidad: str
+
+@app.post("/almacen/raciones")
+def guardar_racion(data: RacionRequest, usuario=Depends(verificar_token)):
+    execute(
+        """INSERT INTO raciones (id_chiquero, producto, cantidad, unidad, ultima_actualizacion)
+           VALUES (%s, %s, %s, %s, %s)
+           ON DUPLICATE KEY UPDATE cantidad=%s, unidad=%s, ultima_actualizacion=%s""",
+        (data.id_chiquero, data.producto, data.cantidad, data.unidad, hora_mexico(),
+         data.cantidad, data.unidad, hora_mexico())
+    )
+    return {"ok": True}
+
+class SalidaAlimentoRequest(BaseModel):
+    id_chiquero: int
+    producto: str
+    cantidad: float
+    unidad: str
+    turno: str  # 'mañana' o 'tarde'
+
+@app.post("/almacen/salida-alimento")
+def registrar_salida_alimento(data: SalidaAlimentoRequest, usuario=Depends(verificar_token)):
+    execute(
+        """INSERT INTO almacen
+           (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha)
+           VALUES ('salida', 'Alimento', %s, %s, %s, NULL, %s, %s, %s)""",
+        (data.producto, data.cantidad, data.unidad,
+         f"Alimentación {data.turno} — corral {data.id_chiquero}",
+         usuario["nombre"], hora_mexico())
+    )
+    return {"ok": True}
