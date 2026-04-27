@@ -1047,12 +1047,16 @@ def get_historial_movimientos(usuario=Depends(verificar_token)):
 @app.get("/almacen/historial-alimento")
 def get_historial_alimento(usuario=Depends(verificar_token)):
     return fetch_all("""
-        SELECT DATE(fecha) AS dia, notas, producto, 
-               SUM(cantidad) AS total_cantidad, unidad,
-               MAX(fecha) AS ultima_fecha
-        FROM almacen
-        WHERE tipo = 'salida' AND categoria = 'Alimento'
-        AND fecha >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-        GROUP BY DATE(fecha), notas, producto, unidad
-        ORDER BY DATE(fecha) DESC
+        SELECT DATE(a.fecha) AS dia, a.notas, a.producto,
+               SUM(a.cantidad) AS total_cantidad, a.unidad,
+               MAX(a.fecha) AS ultima_fecha,
+               c.nombre AS corral_nombre
+        FROM almacen a
+        LEFT JOIN chiqueros c ON c.id = CAST(
+            SUBSTRING_INDEX(a.notas, 'corral ', -1) AS UNSIGNED
+        )
+        WHERE a.tipo = 'salida' AND a.categoria = 'Alimento'
+        AND a.fecha >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY DATE(a.fecha), a.notas, a.producto, a.unidad, c.nombre
+        ORDER BY DATE(a.fecha) DESC
     """)
