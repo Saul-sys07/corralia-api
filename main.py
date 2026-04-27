@@ -1048,10 +1048,11 @@ def get_historial_movimientos(usuario=Depends(verificar_token)):
 def get_historial_alimento(usuario=Depends(verificar_token)):
     return fetch_all("""
         SELECT DATE(fecha) AS dia, notas, producto, 
-               SUM(cantidad) AS total_cantidad, unidad
+               SUM(cantidad) AS total_cantidad, unidad,
+               MAX(fecha) AS ultima_fecha
         FROM almacen
         WHERE tipo = 'salida' AND categoria = 'Alimento'
         AND fecha >= DATE_SUB(NOW(), INTERVAL 7 DAY)
         GROUP BY DATE(fecha), notas, producto, unidad
-        ORDER BY fecha DESC
+        ORDER BY DATE(fecha) DESC
     """)
