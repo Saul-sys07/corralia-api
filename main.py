@@ -310,6 +310,11 @@ def get_inventario(usuario=Depends(verificar_token)):
                SUM(CASE WHEN tipo='entrada' THEN cantidad ELSE -cantidad END) AS stock,
                SUM(CASE WHEN tipo='entrada' AND costo IS NOT NULL THEN costo ELSE 0 END) AS total_invertido
         FROM almacen
+        WHERE producto NOT IN (
+            'Gasolina camioneta', 'Gasolina bomba',
+            'Medicamento/Vacuna', 'Material construcción',
+            'Foto ticket'
+        ) AND producto NOT LIKE 'Otro:%'
         GROUP BY producto, unidad
         HAVING stock > 0
         ORDER BY
