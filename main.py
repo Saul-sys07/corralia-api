@@ -950,7 +950,7 @@ def get_tickets(usuario=Depends(verificar_token)):
     return fetch_all("""
         SELECT notas AS url, usuario_id, fecha
         FROM almacen
-        WHERE tipo = 'ticket'
+        WHERE categoria = 'Evidencia' AND producto = 'Foto ticket'
         ORDER BY fecha DESC
         LIMIT 50
     """)
