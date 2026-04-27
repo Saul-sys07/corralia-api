@@ -1061,40 +1061,52 @@ def get_historial_alimento(usuario=Depends(verificar_token)):
         ORDER BY DATE(a.fecha) DESC
     """)
 @app.get("/reportes/ica")
-def get_ica(usuario=Depends(verificar_token)):
-    # Alimento consumido por corral últimos 30 días
+def get_ica(fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(verificar_token)):
+    from datetime import datetime, timedelta
+    hoy = hora_mexico().date()
+    fi = datetime.strptime(fecha_inicio, "%Y-%m-%d").date() if fecha_inicio else hoy - timedelta(days=30)
+    ff = datetime.strptime(fecha_fin, "%Y-%m-%d").date() if fecha_fin else hoy
+
     alimento = fetch_all("""
-        SELECT c.nombre AS corral, SUM(a.cantidad) AS kg_alimento
+        SELECT c.nombre AS corral, c.zona, SUM(a.cantidad) AS kg_alimento
         FROM almacen a
         LEFT JOIN chiqueros c ON c.id = CAST(
             SUBSTRING_INDEX(a.notas, 'corral ', -1) AS UNSIGNED
         )
         WHERE a.tipo = 'salida' AND a.categoria = 'Alimento'
-        AND a.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        AND DATE(a.fecha) BETWEEN %s AND %s
+        AND c.zona = 'Crecimiento'
         AND c.nombre IS NOT NULL
-        GROUP BY c.nombre
-    """)
-    # Kilos vendidos por corral últimos 30 días
+        GROUP BY c.nombre, c.zona
+    """, (fi, ff))
+
     ventas = fetch_all("""
-        SELECT c.nombre AS corral, SUM(v.peso_kg) AS kg_vendidos
+        SELECT c.nombre AS corral, SUM(v.peso_kg) AS kg_vendidos, COUNT(v.id) AS num_ventas
         FROM ventas v
-        JOIN historial_movimientos h ON h.tipo_evento = 'VENTA'
+        JOIN historial_movimientos h ON h.tipo_evento = 'VENTA' AND h.id_chiquero_destino = v.id
         JOIN chiqueros c ON c.id = h.id_chiquero_destino
-        WHERE v.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        WHERE DATE(v.fecha) BETWEEN %s AND %s
+        AND c.zona = 'Crecimiento'
         GROUP BY c.nombre
-    """)
-    # Cruzar datos
-    ventas_dict = {v['corral']: float(v['kg_vendidos']) for v in ventas}
+    """, (fi, ff))
+
+    ventas_dict = {v['corral']: {'kg': float(v['kg_vendidos']), 'num': int(v['num_ventas'])} for v in ventas}
+
     resultado = []
     for a in alimento:
         corral = a['corral']
         kg_alimento = float(a['kg_alimento'])
-        kg_vendidos = ventas_dict.get(corral, 0)
+        venta = ventas_dict.get(corral, {'kg': 0, 'num': 0})
+        kg_vendidos = venta['kg']
         ica = round(kg_alimento / kg_vendidos, 2) if kg_vendidos > 0 else None
         resultado.append({
             'corral': corral,
+            'zona': a['zona'],
             'kg_alimento': kg_alimento,
             'kg_vendidos': kg_vendidos,
-            'ica': ica
+            'num_ventas': venta['num'],
+            'ica': ica,
+            'fecha_inicio': str(fi),
+            'fecha_fin': str(ff)
         })
     return resultado
