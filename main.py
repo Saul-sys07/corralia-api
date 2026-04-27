@@ -1060,3 +1060,41 @@ def get_historial_alimento(usuario=Depends(verificar_token)):
         GROUP BY DATE(a.fecha), a.notas, a.producto, a.unidad, c.nombre
         ORDER BY DATE(a.fecha) DESC
     """)
+@app.get("/reportes/ica")
+def get_ica(usuario=Depends(verificar_token)):
+    # Alimento consumido por corral últimos 30 días
+    alimento = fetch_all("""
+        SELECT c.nombre AS corral, SUM(a.cantidad) AS kg_alimento
+        FROM almacen a
+        LEFT JOIN chiqueros c ON c.id = CAST(
+            SUBSTRING_INDEX(a.notas, 'corral ', -1) AS UNSIGNED
+        )
+        WHERE a.tipo = 'salida' AND a.categoria = 'Alimento'
+        AND a.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        AND c.nombre IS NOT NULL
+        GROUP BY c.nombre
+    """)
+    # Kilos vendidos por corral últimos 30 días
+    ventas = fetch_all("""
+        SELECT c.nombre AS corral, SUM(v.peso_kg) AS kg_vendidos
+        FROM ventas v
+        JOIN historial_movimientos h ON h.tipo_evento = 'VENTA'
+        JOIN chiqueros c ON c.id = h.id_chiquero_destino
+        WHERE v.fecha >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        GROUP BY c.nombre
+    """)
+    # Cruzar datos
+    ventas_dict = {v['corral']: float(v['kg_vendidos']) for v in ventas}
+    resultado = []
+    for a in alimento:
+        corral = a['corral']
+        kg_alimento = float(a['kg_alimento'])
+        kg_vendidos = ventas_dict.get(corral, 0)
+        ica = round(kg_alimento / kg_vendidos, 2) if kg_vendidos > 0 else None
+        resultado.append({
+            'corral': corral,
+            'kg_alimento': kg_alimento,
+            'kg_vendidos': kg_vendidos,
+            'ica': ica
+        })
+    return resultado
