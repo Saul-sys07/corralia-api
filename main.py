@@ -1029,3 +1029,17 @@ def get_gastos(usuario=Depends(verificar_token)):
         ORDER BY fecha DESC
         LIMIT 100
     """)
+
+@app.get("/historial/movimientos")
+def get_historial_movimientos(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT h.tipo_evento, h.tipo_animal, h.cantidad, h.notas,
+               h.id_usuario, h.fecha,
+               co.nombre AS corral_origen,
+               cd.nombre AS corral_destino
+        FROM historial_movimientos h
+        LEFT JOIN chiqueros co ON co.id = h.id_chiquero_origen
+        LEFT JOIN chiqueros cd ON cd.id = h.id_chiquero_destino
+        ORDER BY h.fecha DESC
+        LIMIT 100
+    """)
