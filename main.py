@@ -1016,3 +1016,16 @@ def get_alimento_hoy(usuario=Depends(verificar_token)):
         AND DATE(fecha) = %s
         GROUP BY notas
     """, (hoy,))
+
+@app.get("/almacen/gastos")
+def get_gastos(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
+        FROM almacen
+        WHERE tipo = 'entrada' AND (
+            producto IN ('Gasolina camioneta', 'Gasolina bomba', 'Medicamento/Vacuna', 'Material construcción')
+            OR producto LIKE 'Otro:%'
+        )
+        ORDER BY fecha DESC
+        LIMIT 100
+    """)
