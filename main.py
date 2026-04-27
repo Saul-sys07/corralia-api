@@ -1000,3 +1000,14 @@ def registrar_salida_alimento(data: SalidaAlimentoRequest, usuario=Depends(verif
          usuario["nombre"], hora_mexico())
     )
     return {"ok": True}
+
+@app.get("/almacen/alimento-hoy")
+def get_alimento_hoy(usuario=Depends(verificar_token)):
+    hoy = hora_mexico().date()
+    return fetch_all("""
+        SELECT notas, COUNT(*) as turnos
+        FROM almacen
+        WHERE tipo = 'salida' AND categoria = 'Alimento'
+        AND DATE(fecha) = %s
+        GROUP BY notas
+    """, (hoy,))
