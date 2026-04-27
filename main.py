@@ -940,7 +940,7 @@ def subir_foto_ticket(data: FotoTicketRequest, usuario=Depends(verificar_token))
     execute(
         """INSERT INTO almacen
            (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha)
-           VALUES ('ticket', 'Evidencia', 'Foto ticket', 1, 'pieza', NULL, %s, %s, %s)""",
+           VALUES ('entrada', 'Evidencia', 'Foto ticket', 0, 'pieza', NULL, %s, %s, %s)""",
         (url, usuario["nombre"], hora_mexico())
     )
     return {"ok": True, "url": url}
