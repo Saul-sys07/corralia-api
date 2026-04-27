@@ -1043,3 +1043,15 @@ def get_historial_movimientos(usuario=Depends(verificar_token)):
         ORDER BY h.fecha DESC
         LIMIT 100
     """)
+
+@app.get("/almacen/historial-alimento")
+def get_historial_alimento(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT DATE(fecha) AS dia, notas, producto, 
+               SUM(cantidad) AS total_cantidad, unidad
+        FROM almacen
+        WHERE tipo = 'salida' AND categoria = 'Alimento'
+        AND fecha >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY DATE(fecha), notas, producto, unidad
+        ORDER BY fecha DESC
+    """)
