@@ -145,11 +145,11 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
         (data.cantidad, data.id_origen, data.tipo_animal)
     )
     execute(
-        """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual)
-           VALUES (%s, %s, %s)
-           ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-        (data.id_destino, tipo_destino, data.cantidad)
-    )
+    """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
+       VALUES (%s, %s, %s, %s)
+       ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
+    (data.id_destino, tipo_destino, data.cantidad, hora_mexico())
+)
     execute(
         """INSERT INTO historial_movimientos
            (id_chiquero_origen, id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
@@ -188,11 +188,11 @@ def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
         (data.cantidad, data.id_chiquero, data.tipo_animal)
     )
     execute(
-        """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual)
-           VALUES (%s, %s, %s)
-           ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-        (data.id_chiquero, data.nueva_etapa, data.cantidad)
-    )
+    """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
+       VALUES (%s, %s, %s, %s)
+       ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
+    (data.id_chiquero, data.nueva_etapa, data.cantidad, hora_mexico())
+)
     execute(
         """INSERT INTO historial_movimientos
            (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
