@@ -38,8 +38,8 @@ app.add_middleware(
 SECRET_KEY = os.getenv("SECRET_KEY")
 security = HTTPBearer()
 
-TELEGRAM_TOKEN = "8607884245:AAGM6n8cURfhp1g1R-PBt-sVWTpkBbkSMQ4"
-TELEGRAM_CHAT_ID = "-5128148258"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def hora_mexico():
     return datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
