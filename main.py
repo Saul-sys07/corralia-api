@@ -39,7 +39,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 security = HTTPBearer()
 
 TELEGRAM_TOKEN = "8607884245:AAGM6n8cURfhp1g1R-PBt-sVWTpkBbkSMQ4"
-TELEGRAM_CHAT_ID = "6855350502"
+TELEGRAM_CHAT_ID = "-5128148258"
 
 def hora_mexico():
     return datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
