@@ -60,6 +60,8 @@ def verificar_token(credentials: HTTPAuthorizationCredentials = Depends(security
 # ── Login ─────────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
     pin: str
+    lat: float | None = None
+    lng: float | None = None
 
 @app.post("/login")
 def login(data: LoginRequest):
@@ -69,6 +71,20 @@ def login(data: LoginRequest):
     )
     if not usuario:
         raise HTTPException(status_code=401, detail="PIN incorrecto")
+    
+    ROLES_CAMPO = ['parideras', 'crecimiento', 'gestacion', 'ayudante_general', 'encargado_general']
+    if usuario['rol'] in ROLES_CAMPO and data.lat and data.lng:
+        import math
+        RANCHO_LAT = 19.845154
+        RANCHO_LNG = -99.906298
+        RADIO_METROS = 500
+        dlat = math.radians(data.lat - RANCHO_LAT)
+        dlng = math.radians(data.lng - RANCHO_LNG)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(RANCHO_LAT)) * math.cos(math.radians(data.lat)) * math.sin(dlng/2)**2
+        distancia = 6371000 * 2 * math.asin(math.sqrt(a))
+        if distancia > RADIO_METROS:
+            raise HTTPException(status_code=403, detail=f"Debes estar en el rancho para acceder. Distancia: {int(distancia)}m")
+    
     execute("UPDATE usuarios SET ultimo_acceso = %s WHERE id = %s",
             (hora_mexico(), usuario["id"]))
     return {
@@ -1110,3 +1126,4 @@ def get_ica(fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(ver
             'fecha_fin': str(ff)
         })
     return resultado
+
