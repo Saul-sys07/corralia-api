@@ -98,7 +98,7 @@ def get_mapa(usuario=Depends(verificar_token)):
         FROM chiqueros c
         LEFT JOIN lotes l ON c.id = l.id_chiquero AND l.poblacion_actual > 0
         GROUP BY c.id
-        ORDER BY c.zona, c.nombre
+        ORDER BY c.zona, CAST(REGEXP_SUBSTR(c.nombre, '[0-9]+') AS UNSIGNED), c.nombre
     """)
 
 @app.get("/")
