@@ -6,8 +6,10 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import jwt
 import os
+import math
 import cloudinary
 import cloudinary.uploader
+import requests as req
 from dotenv import load_dotenv
 from database import fetch_one, fetch_all, execute
 
@@ -36,8 +38,21 @@ app.add_middleware(
 SECRET_KEY = os.getenv("SECRET_KEY")
 security = HTTPBearer()
 
+TELEGRAM_TOKEN = "8607884245:AAGM6n8cURfhp1g1R-PBt-sVWTpkBbkSMQ4"
+TELEGRAM_CHAT_ID = "6855350502"
+
 def hora_mexico():
     return datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
+
+def enviar_telegram(mensaje: str):
+    try:
+        req.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje},
+            timeout=5
+        )
+    except:
+        pass
 
 def crear_token(usuario: dict) -> str:
     payload = {
@@ -71,20 +86,36 @@ def login(data: LoginRequest):
     )
     if not usuario:
         raise HTTPException(status_code=401, detail="PIN incorrecto")
-    
+
     ROLES_CAMPO = ['parideras', 'crecimiento', 'gestacion', 'ayudante_general', 'encargado_general']
-    if usuario['rol'] in ROLES_CAMPO and data.lat and data.lng:
-        import math
-        RANCHO_LAT = 19.845154
-        RANCHO_LNG = -99.906298
-        RADIO_METROS = 500
-        dlat = math.radians(data.lat - RANCHO_LAT)
-        dlng = math.radians(data.lng - RANCHO_LNG)
-        a = math.sin(dlat/2)**2 + math.cos(math.radians(RANCHO_LAT)) * math.cos(math.radians(data.lat)) * math.sin(dlng/2)**2
-        distancia = 6371000 * 2 * math.asin(math.sqrt(a))
-        if distancia > RADIO_METROS:
-            raise HTTPException(status_code=403, detail=f"Debes estar en el rancho para acceder. Distancia: {int(distancia)}m")
-    
+    if usuario['rol'] in ROLES_CAMPO:
+        if data.lat and data.lng:
+            RANCHO_LAT = 19.845154
+            RANCHO_LNG = -99.906298
+            RADIO_METROS = 500
+            dlat = math.radians(data.lat - RANCHO_LAT)
+            dlng = math.radians(data.lng - RANCHO_LNG)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(RANCHO_LAT)) * math.cos(math.radians(data.lat)) * math.sin(dlng/2)**2
+            distancia = 6371000 * 2 * math.asin(math.sqrt(a))
+            if distancia > RADIO_METROS:
+                hora = hora_mexico().strftime('%d/%m/%Y %H:%M')
+                enviar_telegram(
+                    f"⚠️ ALERTA CORRALIA\n"
+                    f"👤 {usuario['nombre']} ({usuario['rol']})\n"
+                    f"📍 Está a {int(distancia)}m del rancho\n"
+                    f"🕐 {hora}\n"
+                    f"💸 Multa aplicable: $50"
+                )
+        else:
+            hora = hora_mexico().strftime('%d/%m/%Y %H:%M')
+            enviar_telegram(
+                f"⚠️ ALERTA CORRALIA\n"
+                f"👤 {usuario['nombre']} ({usuario['rol']})\n"
+                f"📍 No compartió ubicación\n"
+                f"🕐 {hora}\n"
+                f"💸 Multa aplicable: $50"
+            )
+
     execute("UPDATE usuarios SET ultimo_acceso = %s WHERE id = %s",
             (hora_mexico(), usuario["id"]))
     return {
@@ -161,11 +192,11 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
         (data.cantidad, data.id_origen, data.tipo_animal)
     )
     execute(
-    """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
-       VALUES (%s, %s, %s, %s)
-       ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-    (data.id_destino, tipo_destino, data.cantidad, hora_mexico())
-)
+        """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
+           VALUES (%s, %s, %s, %s)
+           ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
+        (data.id_destino, tipo_destino, data.cantidad, hora_mexico())
+    )
     execute(
         """INSERT INTO historial_movimientos
            (id_chiquero_origen, id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
@@ -204,11 +235,11 @@ def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
         (data.cantidad, data.id_chiquero, data.tipo_animal)
     )
     execute(
-    """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
-       VALUES (%s, %s, %s, %s)
-       ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-    (data.id_chiquero, data.nueva_etapa, data.cantidad, hora_mexico())
-)
+        """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
+           VALUES (%s, %s, %s, %s)
+           ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
+        (data.id_chiquero, data.nueva_etapa, data.cantidad, hora_mexico())
+    )
     execute(
         """INSERT INTO historial_movimientos
            (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
@@ -975,6 +1006,7 @@ def get_tickets(usuario=Depends(verificar_token)):
         ORDER BY fecha DESC
         LIMIT 50
     """)
+
 # ── Raciones ──────────────────────────────────────────────────────────────────
 @app.get("/almacen/raciones")
 def get_raciones(usuario=Depends(verificar_token)):
@@ -1008,7 +1040,7 @@ class SalidaAlimentoRequest(BaseModel):
     producto: str
     cantidad: float
     unidad: str
-    turno: str  # 'mañana' o 'tarde'
+    turno: str
 
 @app.post("/almacen/salida-alimento")
 def registrar_salida_alimento(data: SalidaAlimentoRequest, usuario=Depends(verificar_token)):
@@ -1076,9 +1108,10 @@ def get_historial_alimento(usuario=Depends(verificar_token)):
         GROUP BY DATE(a.fecha), a.notas, a.producto, a.unidad, c.nombre
         ORDER BY DATE(a.fecha) DESC
     """)
+
 @app.get("/reportes/ica")
 def get_ica(fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(verificar_token)):
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     hoy = hora_mexico().date()
     fi = datetime.strptime(fecha_inicio, "%Y-%m-%d").date() if fecha_inicio else hoy - timedelta(days=30)
     ff = datetime.strptime(fecha_fin, "%Y-%m-%d").date() if fecha_fin else hoy
@@ -1126,4 +1159,3 @@ def get_ica(fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(ver
             'fecha_fin': str(ff)
         })
     return resultado
-
