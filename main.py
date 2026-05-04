@@ -173,6 +173,13 @@ def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
         (data.id_chiquero, data.tipo_animal, data.cantidad,
          usuario["nombre"], f"Causa: {data.causa}", hora_mexico())
     )
+    enviar_telegram(
+        f"💀 MUERTE\n"
+        f"👤 {usuario['nombre']}\n"
+        f"🐖 {data.cantidad} {data.tipo_animal}\n"
+        f"📋 Causa: {data.causa}\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+    )
     return {"ok": True}
 
 # ── Traslado ──────────────────────────────────────────────────────────────────
@@ -205,6 +212,13 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
          usuario["nombre"],
          f"Avance de etapa: {data.tipo_animal} → {tipo_destino}" if data.nueva_etapa else f"Traspaso de {data.cantidad} {data.tipo_animal}",
          hora_mexico())
+    )
+    enviar_telegram(
+        f"🔄 TRASPASO\n"
+        f"👤 {usuario['nombre']}\n"
+        f"🐖 {data.cantidad} {data.tipo_animal}\n"
+        f"📍 Corral {data.id_origen} → {data.id_destino}\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
     )
     return {"ok": True}
 
@@ -286,6 +300,13 @@ def registrar_parto(data: PartoRequest, usuario=Depends(verificar_token)):
            WHERE id_chiquero = %s AND tipo_animal = 'Pie de Cría'""",
         (data.id_chiquero,)
     )
+    enviar_telegram(
+        f"🍼 PARTO\n"
+        f"👤 {usuario['nombre']}\n"
+        f"✅ {data.crias_vivas} crías vivas\n"
+        f"❌ {data.no_logradas} no logradas\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+    )
     return {"ok": True}
 
 # ── Ventas ────────────────────────────────────────────────────────────────────
@@ -347,6 +368,13 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
             execute("UPDATE clientes SET tipo = 'Retenido' WHERE id = %s", (data.cliente_id,))
     execute("UPDATE clientes SET ultimo_pedido = %s WHERE id = %s",
             (hora_mexico(), data.cliente_id))
+    enviar_telegram(
+        f"💰 VENTA\n"
+        f"👤 {usuario['nombre']}\n"
+        f"🐖 {data.cantidad} {data.tipo_animal} — {data.peso_kg}kg\n"
+        f"💵 ${data.total_rancho:,.2f}\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+    )
     return {"ok": True, "mensaje": f"Venta registrada — ${data.total_rancho:,.2f}"}
 
 # ── Almacen ───────────────────────────────────────────────────────────────────
@@ -408,6 +436,14 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
              item.costo, f"Compra — descuento: ${data.descuento:.2f}",
              usuario["nombre"], fecha)
         )
+    total = sum(i.costo for i in data.items)
+    enviar_telegram(
+        f"🏚️ COMPRA ALMACÉN\n"
+        f"👤 {usuario['nombre']}\n"
+        f"📦 {len(data.items)} productos\n"
+        f"💵 ${total:,.2f}\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+    )
     return {"ok": True}
 
 class RevolturaRequest(BaseModel):
