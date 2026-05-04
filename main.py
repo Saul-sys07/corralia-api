@@ -89,7 +89,7 @@ def login(data: LoginRequest):
 
     ROLES_CAMPO = ['parideras', 'crecimiento', 'gestacion', 'ayudante_general', 'encargado_general']
     if usuario['rol'] in ROLES_CAMPO:
-        if data.lat and data.lng:
+        if data.lat is not None and data.lng is not None:
             RANCHO_LAT = 19.845154
             RANCHO_LNG = -99.906298
             RADIO_METROS = 500
