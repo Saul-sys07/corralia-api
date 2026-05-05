@@ -213,11 +213,13 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
          f"Avance de etapa: {data.tipo_animal} → {tipo_destino}" if data.nueva_etapa else f"Traspaso de {data.cantidad} {data.tipo_animal}",
          hora_mexico())
     )
+    corral_origen = fetch_one("SELECT nombre FROM chiqueros WHERE id = %s", (data.id_origen,))
+    corral_destino = fetch_one("SELECT nombre FROM chiqueros WHERE id = %s", (data.id_destino,))
     enviar_telegram(
         f"🔄 TRASPASO\n"
         f"👤 {usuario['nombre']}\n"
         f"🐖 {data.cantidad} {data.tipo_animal}\n"
-        f"📍 Corral {data.id_origen} → {data.id_destino}\n"
+        f"📍 {corral_origen['nombre']} → {corral_destino['nombre']}\n"
         f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
     )
     return {"ok": True}
