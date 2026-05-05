@@ -54,6 +54,34 @@ def enviar_telegram(mensaje: str):
     except:
         pass
 
+def verificar_alertas_preñez():
+    hoy = hora_mexico().date()
+    lotes = fetch_all("""
+        SELECT l.id, l.fecha_monta, c.nombre AS corral
+        FROM lotes l
+        JOIN chiqueros c ON c.id = l.id_chiquero
+        WHERE l.tipo_animal = 'Pie de Cría'
+        AND l.poblacion_actual > 0
+        AND l.fecha_monta IS NOT NULL
+        AND l.estado_pie_cria NOT IN ('Vacía', 'Parida')
+    """)
+    for lote in lotes:
+        fecha_monta = lote['fecha_monta']
+        if hasattr(fecha_monta, 'date'):
+            fecha_monta = fecha_monta.date()
+        elif isinstance(fecha_monta, str):
+            fecha_monta = datetime.strptime(fecha_monta, "%Y-%m-%d").date()
+        dia_21 = fecha_monta + timedelta(days=21)
+        dia_107 = fecha_monta + timedelta(days=107)
+        if hoy == dia_21:
+            ya = fetch_one("SELECT id FROM notificaciones WHERE id_lote=%s AND tipo='verificar_preñez'", (lote['id'],))
+            if not ya:
+                enviar_telegram(f"🔍 VERIFICAR PREÑEZ\n📍 {lote['corral']}\n📅 Han pasado 21 días de la monta")
+        if hoy == dia_107:
+            ya = fetch_one("SELECT id FROM notificaciones WHERE id_lote=%s AND tipo='alerta_parto'", (lote['id'],))
+            if not ya:
+                enviar_telegram(f"⚠️ PARTO PRÓXIMO\n📍 {lote['corral']}\n📅 Faltan 7 días para el parto estimado")
+
 def crear_token(usuario: dict) -> str:
     payload = {
         "id": usuario["id"],
@@ -116,6 +144,7 @@ def login(data: LoginRequest):
                 f"💸 Multa aplicable: $50"
             )
 
+    verificar_alertas_preñez()
     execute("UPDATE usuarios SET ultimo_acceso = %s WHERE id = %s",
             (hora_mexico(), usuario["id"]))
     return {
@@ -213,7 +242,6 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
          f"Avance de etapa: {data.tipo_animal} → {tipo_destino}" if data.nueva_etapa else f"Traspaso de {data.cantidad} {data.tipo_animal}",
          hora_mexico())
     )
-
     corral_origen = fetch_one("SELECT nombre, zona FROM chiqueros WHERE id = %s", (data.id_origen,))
     corral_destino = fetch_one("SELECT nombre, zona FROM chiqueros WHERE id = %s", (data.id_destino,))
     enviar_telegram(
@@ -862,6 +890,13 @@ def actualizar_pie_de_cria(data: PieCriaUpdate, usuario=Depends(verificar_token)
            WHERE id = %s""",
         (data.estado, fecha_monta, fecha_parto, data.lote_id)
     )
+    enviar_telegram(
+        f"🐷 MONTA REGISTRADA\n"
+        f"👤 {usuario['nombre']}\n"
+        f"📅 Fecha monta: {data.fecha_monta}\n"
+        f"📅 Parto estimado: {fecha_parto}\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+    ) if data.fecha_monta else None
     return {"ok": True}
 
 class AnimalRequest(BaseModel):
@@ -938,6 +973,7 @@ def reset_nuclear(data: NuclearRequest, usuario=Depends(verificar_token)):
     execute("DELETE FROM finanzas")
     execute("DELETE FROM almacen")
     execute("DELETE FROM clientes")
+    execute("DELETE FROM notificaciones")
     execute("""UPDATE lotes SET poblacion_actual = 0,
                estado_pie_cria = NULL, fecha_monta = NULL,
                fecha_parto_estimada = NULL""")
@@ -1203,7 +1239,6 @@ def get_ica(fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(ver
 @app.get("/notificaciones")
 def get_notificaciones(usuario=Depends(verificar_token)):
     hoy = hora_mexico().date()
-    # Generar notificaciones automáticas de preñez y parto
     lotes_activos = fetch_all("""
         SELECT l.id, l.id_chiquero, l.fecha_monta, l.fecha_parto_estimada,
                c.nombre AS corral, c.zona
@@ -1220,8 +1255,8 @@ def get_notificaciones(usuario=Depends(verificar_token)):
             continue
         if isinstance(fecha_monta, str):
             fecha_monta = datetime.strptime(fecha_monta, "%Y-%m-%d").date()
-        else:
-            fecha_monta = fecha_monta if hasattr(fecha_monta, 'year') else fecha_monta.date()
+        elif hasattr(fecha_monta, 'date'):
+            fecha_monta = fecha_monta.date()
 
         dia_21 = fecha_monta + timedelta(days=21)
         dia_107 = fecha_monta + timedelta(days=107)
@@ -1242,7 +1277,6 @@ def get_notificaciones(usuario=Depends(verificar_token)):
                 """, (tipo, mensaje, lote['id'], 'admin,encargado_general,gestacion',
                       hora_mexico(), fecha_prog))
 
-    # Traer notificaciones no vistas para este usuario
     notifs = fetch_all("""
         SELECT * FROM notificaciones
         WHERE roles_destino LIKE %s
