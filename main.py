@@ -170,7 +170,9 @@ def get_mapa(usuario=Depends(verificar_token)):
                MAX(l.fecha_parto_estimada) AS fecha_parto,
                GROUP_CONCAT(
                    DISTINCT l.estado_pie_cria ORDER BY l.estado_pie_cria SEPARATOR ', '
-               ) AS estado_pie_cria
+               ) AS estado_pie_cria,
+               MAX(CASE WHEN l.tipo_animal = 'Pie de Cría' THEN l.id END) AS lote_id,
+               MAX(CASE WHEN l.tipo_animal = 'Pie de Cría' THEN l.foto_pie_cria END) AS foto_pie_cria
         FROM chiqueros c
         LEFT JOIN lotes l ON c.id = l.id_chiquero AND l.poblacion_actual > 0
         GROUP BY c.id
