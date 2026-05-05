@@ -213,6 +213,7 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
          f"Avance de etapa: {data.tipo_animal} → {tipo_destino}" if data.nueva_etapa else f"Traspaso de {data.cantidad} {data.tipo_animal}",
          hora_mexico())
     )
+
     corral_origen = fetch_one("SELECT nombre FROM chiqueros WHERE id = %s", (data.id_origen,))
     corral_destino = fetch_one("SELECT nombre FROM chiqueros WHERE id = %s", (data.id_destino,))
     enviar_telegram(
@@ -233,7 +234,7 @@ def get_corrales_destino(tipo_animal: str, excluir_id: int, usuario=Depends(veri
         LEFT JOIN lotes l ON c.id = l.id_chiquero AND l.poblacion_actual > 0
         WHERE c.id != %s
         GROUP BY c.id
-        ORDER BY c.zona, c.nombre
+        ORDER BY c.zona, CAST(REGEXP_SUBSTR(c.nombre, '[0-9]+') AS UNSIGNED), c.nombre
     """, (excluir_id,))
 
 # ── Cambio de Etapa ───────────────────────────────────────────────────────────
