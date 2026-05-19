@@ -1442,3 +1442,95 @@ def cancelar_apartado(apartado_id: int, usuario=Depends(verificar_token)):
 def liquidar_apartado(apartado_id: int, usuario=Depends(verificar_token)):
     execute("UPDATE apartados SET estado = 'liquidado' WHERE id = %s", (apartado_id,))
     return {"ok": True}
+
+# ── Resumen Semanal ───────────────────────────────────────────────────────────
+@app.get("/finanzas/semana")
+def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
+    from datetime import timedelta
+    if fecha:
+        dia = datetime.strptime(fecha, "%Y-%m-%d").date()
+    else:
+        dia = hora_mexico().date()
+    
+    # Calcular lunes y domingo de la semana
+    lunes = dia - timedelta(days=dia.weekday())
+    domingo = lunes + timedelta(days=6)
+
+    # Ingresos
+    depositos = fetch_all("""
+        SELECT monto, notas, fecha FROM finanzas 
+        WHERE tipo='deposito' AND DATE(fecha) BETWEEN %s AND %s
+        ORDER BY fecha DESC
+    """, (lunes, domingo))
+    
+    ventas = fetch_all("""
+        SELECT v.total_rancho, v.tipo_animal, v.cantidad, v.fecha,
+               c.nombre AS cliente
+        FROM ventas v
+        JOIN clientes c ON c.id = v.cliente_id
+        WHERE DATE(v.fecha) BETWEEN %s AND %s
+        ORDER BY v.fecha DESC
+    """, (lunes, domingo))
+
+    # Gastos
+    nomina = fetch_all("""
+        SELECT concepto, monto, notas, fecha FROM finanzas
+        WHERE tipo='sueldo' AND DATE(fecha) BETWEEN %s AND %s
+        ORDER BY fecha DESC
+    """, (lunes, domingo))
+
+    alimento = fetch_one("""
+        SELECT IFNULL(SUM(cantidad), 0) AS total_kg,
+               COUNT(*) AS num_registros
+        FROM almacen
+        WHERE tipo='salida' AND categoria='Alimento'
+        AND DATE(fecha) BETWEEN %s AND %s
+    """, (lunes, domingo))
+
+    gastos_otros = fetch_all("""
+        SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
+        FROM almacen
+        WHERE tipo='entrada' AND DATE(fecha) BETWEEN %s AND %s
+        AND (
+            producto IN ('Gasolina camioneta', 'Gasolina bomba', 'Medicamento/Vacuna', 'Material construcción')
+            OR producto LIKE 'Otro:%'
+        )
+        ORDER BY fecha DESC
+    """, (lunes, domingo))
+
+    compras_alimento = fetch_all("""
+        SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
+        FROM almacen
+        WHERE tipo='entrada' AND DATE(fecha) BETWEEN %s AND %s
+        AND categoria IN ('Ingredientes revoltura', 'Pellet')
+        ORDER BY fecha DESC
+    """, (lunes, domingo))
+
+    # Totales
+    total_depositos = sum(float(d['monto']) for d in depositos)
+    total_ventas = sum(float(v['total_rancho']) for v in ventas)
+    total_nomina = sum(float(n['monto']) for n in nomina)
+    total_gastos_otros = sum(float(g['costo'] or 0) for g in gastos_otros)
+    total_compras = sum(float(c['costo'] or 0) for c in compras_alimento)
+
+    return {
+        "semana": {"inicio": str(lunes), "fin": str(domingo)},
+        "ingresos": {
+            "depositos": depositos,
+            "ventas": ventas,
+            "total_depositos": total_depositos,
+            "total_ventas": total_ventas,
+            "total": total_depositos + total_ventas
+        },
+        "gastos": {
+            "nomina": nomina,
+            "alimento_kg": float(alimento['total_kg']),
+            "compras_alimento": compras_alimento,
+            "otros": gastos_otros,
+            "total_nomina": total_nomina,
+            "total_compras": total_compras,
+            "total_otros": total_gastos_otros,
+            "total": total_nomina + total_compras + total_gastos_otros
+        },
+        "sobrante": (total_depositos + total_ventas) - (total_nomina + total_compras + total_gastos_otros)
+    }
