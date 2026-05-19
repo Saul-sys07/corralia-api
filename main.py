@@ -545,7 +545,10 @@ def get_depositos(usuario=Depends(verificar_token)):
 def get_nomina(usuario=Depends(verificar_token)):
     hoy = hora_mexico().date()
     from datetime import timedelta
-    domingo_inicio = hoy - timedelta(days=(hoy.weekday() + 1) % 7)
+    dias_desde_domingo = (hoy.weekday() + 1) % 7
+    if dias_desde_domingo == 0:
+        dias_desde_domingo = 7
+    domingo_inicio = hoy - timedelta(days=dias_desde_domingo)
     domingo_fin = domingo_inicio + timedelta(days=6)
     return fetch_all("""
         SELECT u.id, u.nombre, u.sueldo_diario,
@@ -1453,7 +1456,10 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
         dia = hora_mexico().date()
     
     # Calcular lunes y domingo de la semana
-    domingo_inicio = dia - timedelta(days=(dia.weekday() + 1) % 7)
+    dias_desde_domingo = (dia.weekday() + 1) % 7
+    if dias_desde_domingo == 0:
+        dias_desde_domingo = 7
+    domingo_inicio = dia - timedelta(days=dias_desde_domingo)
     domingo_fin = domingo_inicio + timedelta(days=6)
     lunes = domingo_inicio
     domingo = domingo_fin
