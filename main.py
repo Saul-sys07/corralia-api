@@ -545,8 +545,8 @@ def get_depositos(usuario=Depends(verificar_token)):
 def get_nomina(usuario=Depends(verificar_token)):
     hoy = hora_mexico().date()
     from datetime import timedelta
-    lunes = hoy - timedelta(days=hoy.weekday())
-    domingo = lunes + timedelta(days=6)
+    domingo_inicio = hoy - timedelta(days=(hoy.weekday() + 1) % 7)
+    domingo_fin = domingo_inicio + timedelta(days=6)
     return fetch_all("""
         SELECT u.id, u.nombre, u.sueldo_diario,
                COUNT(DISTINCT DATE(a.fecha_entrada)) AS dias_trabajados
@@ -555,7 +555,7 @@ def get_nomina(usuario=Depends(verificar_token)):
             AND DATE(a.fecha_entrada) BETWEEN %s AND %s
         WHERE u.activo = 1 AND u.rol != 'admin'
         GROUP BY u.id ORDER BY u.nombre
-    """, (lunes, domingo))
+    """, (domingo_inicio, domingo_fin))
 
 class DepositoRequest(BaseModel):
     monto: float
@@ -1453,8 +1453,10 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
         dia = hora_mexico().date()
     
     # Calcular lunes y domingo de la semana
-    lunes = dia - timedelta(days=dia.weekday())
-    domingo = lunes + timedelta(days=6)
+    domingo_inicio = dia - timedelta(days=(dia.weekday() + 1) % 7)
+    domingo_fin = domingo_inicio + timedelta(days=6)
+    lunes = domingo_inicio
+    domingo = domingo_fin
 
     # Ingresos
     depositos = fetch_all("""
