@@ -1465,6 +1465,16 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     domingo = domingo_fin
 
     # Ingresos
+        # Sobrante semana anterior
+    semana_ant_inicio = domingo_inicio - timedelta(days=7)
+    semana_ant_fin = domingo_inicio - timedelta(days=1)
+
+    dep_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
+    ven_ant = fetch_one("SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas WHERE DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
+    nom_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo' AND DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
+    gas_ant = fetch_one("SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL AND DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
+    sobrante_anterior = float(dep_ant['t']) + float(ven_ant['t']) - float(nom_ant['t']) - float(gas_ant['t'])
+    sobrante_anterior = max(sobrante_anterior, 0)  # Si fue negativo no se arrastra
     depositos = fetch_all("""
         SELECT monto, notas, fecha FROM finanzas 
         WHERE tipo='deposito' AND DATE(fecha) BETWEEN %s AND %s
@@ -1526,9 +1536,10 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
         "ingresos": {
             "depositos": depositos,
             "ventas": ventas,
+            "sobrante_anterior": sobrante_anterior,
             "total_depositos": total_depositos,
             "total_ventas": total_ventas,
-            "total": total_depositos + total_ventas
+            "total": total_depositos + total_ventas + sobrante_anterior
         },
         "gastos": {
             "nomina": nomina,
@@ -1540,5 +1551,6 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
             "total_otros": total_gastos_otros,
             "total": total_nomina + total_compras + total_gastos_otros
         },
-        "sobrante": (total_depositos + total_ventas) - (total_nomina + total_compras + total_gastos_otros)
+        "sobrante": (total_depositos + total_ventas + sobrante_anterior) - (total_nomina + total_compras + total_gastos_otros)
     }
+
