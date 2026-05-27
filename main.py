@@ -1525,12 +1525,12 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     """, (lunes, domingo))
 
     compras_alimento = fetch_all("""
-        SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
-        FROM almacen
-        WHERE tipo='entrada' AND DATE(fecha) BETWEEN %s AND %s
-        AND categoria IN ('Ingredientes revoltura', 'Pellet')
-        ORDER BY fecha DESC
-    """, (lunes, domingo))
+    SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
+    FROM almacen
+    WHERE tipo='entrada' AND DATE(fecha) BETWEEN %s AND %s
+    AND categoria IN ('Ingredientes revoltura', 'Pellet', 'Descuento')
+    ORDER BY fecha DESC
+""", (lunes, domingo))
 
     # Totales
     total_depositos = sum(float(d['monto']) for d in depositos)
