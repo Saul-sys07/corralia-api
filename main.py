@@ -476,7 +476,15 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
         f"📦 {len(data.items)} productos\n"
         f"💵 ${total:,.2f}\n"
         f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+        )
+    if data.descuento > 0:
+     execute(
+        """INSERT INTO almacen
+           (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha)
+           VALUES ('entrada', 'Descuento', 'Descuento en compra', 0, 'pieza', %s, %s, %s, %s)""",
+        (-data.descuento, f"Descuento aplicado a compra", usuario["nombre"], fecha)
     )
+    
     return {"ok": True}
 
 class RevolturaRequest(BaseModel):
