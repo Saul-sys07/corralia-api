@@ -230,11 +230,12 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
         (data.cantidad, data.id_origen, data.tipo_animal)
     )
     execute(
-        """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
-           VALUES (%s, %s, %s, %s)
-           ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-        (data.id_destino, tipo_destino, data.cantidad, hora_mexico())
+    """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada, estado_pie_cria)
+       VALUES (%s, %s, %s, %s, IF(%s = 'Pie de Cría', 'Disponible', NULL))
+       ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
+    (data.id_destino, tipo_destino, data.cantidad, hora_mexico(), tipo_destino)
     )
+    
     execute(
         """INSERT INTO historial_movimientos
            (id_chiquero_origen, id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
