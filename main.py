@@ -1477,10 +1477,10 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     semana_ant_inicio = domingo_inicio - timedelta(days=7)
     semana_ant_fin = domingo_inicio - timedelta(days=1)
 
-    dep_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
-    ven_ant = fetch_one("SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas WHERE DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
-    nom_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo' AND DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
-    gas_ant = fetch_one("SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL AND DATE(fecha) BETWEEN %s AND %s", (semana_ant_inicio, semana_ant_fin))
+    dep_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND DATE(fecha) < %s", (domingo_inicio,))
+    ven_ant = fetch_one("SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas WHERE DATE(fecha) < %s", (domingo_inicio,))
+    nom_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo' AND DATE(fecha) < %s", (domingo_inicio,))
+    gas_ant = fetch_one("SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL AND DATE(fecha) < %s", (domingo_inicio,))
     sobrante_anterior = float(dep_ant['t']) + float(ven_ant['t']) - float(nom_ant['t']) - float(gas_ant['t'])
     sobrante_anterior = max(sobrante_anterior, 0)  # Si fue negativo no se arrastra
     depositos = fetch_all("""
