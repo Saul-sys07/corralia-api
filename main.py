@@ -1,347 +1,55 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-import jwt
-import os
 import math
 import cloudinary
 import cloudinary.uploader
-import requests as req
-from dotenv import load_dotenv
+
 from database import fetch_one, fetch_all, execute
 
-load_dotenv()
+from app.core.config import (
+    CLOUDINARY_CLOUD_NAME,
+    CLOUDINARY_API_KEY,
+    CLOUDINARY_API_SECRET,
+    CORS_ORIGINS,
+    RANCHO_LAT,
+    RANCHO_LNG,
+    RADIO_METROS,
+)
+
+from app.core.time import hora_mexico
+from app.core.telegram import enviar_telegram
+from app.core.security import crear_token, verificar_token
+from app.routers import auth, mapa, movimientos
+
 
 cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET
 )
 
 app = FastAPI(title="Corralia API v4")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://corralia-react.vercel.app",
-        "https://corralia-react-h0e10gno8-saul-sys07s-projects.vercel.app"
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-security = HTTPBearer()
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-def hora_mexico():
-    return datetime.now(ZoneInfo("America/Mexico_City")).replace(tzinfo=None)
-
-def enviar_telegram(mensaje: str):
-    try:
-        req.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje},
-            timeout=5
-        )
-    except:
-        pass
-
-def verificar_alertas_preñez():
-    hoy = hora_mexico().date()
-    lotes = fetch_all("""
-        SELECT l.id, l.fecha_monta, c.nombre AS corral
-        FROM lotes l
-        JOIN chiqueros c ON c.id = l.id_chiquero
-        WHERE l.tipo_animal = 'Pie de Cría'
-        AND l.poblacion_actual > 0
-        AND l.fecha_monta IS NOT NULL
-        AND l.estado_pie_cria NOT IN ('Vacía', 'Parida')
-    """)
-    for lote in lotes:
-        fecha_monta = lote['fecha_monta']
-        if hasattr(fecha_monta, 'date'):
-            fecha_monta = fecha_monta.date()
-        elif isinstance(fecha_monta, str):
-            fecha_monta = datetime.strptime(fecha_monta, "%Y-%m-%d").date()
-        dia_21 = fecha_monta + timedelta(days=21)
-        dia_107 = fecha_monta + timedelta(days=107)
-        if hoy == dia_21:
-            ya = fetch_one("SELECT id FROM notificaciones WHERE id_lote=%s AND tipo='verificar_preñez'", (lote['id'],))
-            if not ya:
-                enviar_telegram(f"🔍 VERIFICAR PREÑEZ\n📍 {lote['corral']}\n📅 Han pasado 21 días de la monta")
-        if hoy == dia_107:
-            ya = fetch_one("SELECT id FROM notificaciones WHERE id_lote=%s AND tipo='alerta_parto'", (lote['id'],))
-            if not ya:
-                enviar_telegram(f"⚠️ PARTO PRÓXIMO\n📍 {lote['corral']}\n📅 Faltan 7 días para el parto estimado")
-
-def crear_token(usuario: dict) -> str:
-    payload = {
-        "id": usuario["id"],
-        "nombre": usuario["nombre"],
-        "rol": usuario["rol"],
-        "exp": datetime.utcnow() + timedelta(hours=8)
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-
-def verificar_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-
-# ── Login ─────────────────────────────────────────────────────────────────────
-class LoginRequest(BaseModel):
-    pin: str
-    lat: float | None = None
-    lng: float | None = None
-
-@app.post("/login")
-def login(data: LoginRequest):
-    usuario = fetch_one(
-        "SELECT * FROM usuarios WHERE pin = %s AND activo = 1",
-        (data.pin,)
-    )
-    if not usuario:
-        raise HTTPException(status_code=401, detail="PIN incorrecto")
-
-    ROLES_CAMPO = ['parideras', 'crecimiento', 'gestacion', 'ayudante_general', 'encargado_general']
-    if usuario['rol'] in ROLES_CAMPO:
-        if data.lat is not None and data.lng is not None:
-            RANCHO_LAT = 19.845154
-            RANCHO_LNG = -99.906298
-            RADIO_METROS = 500
-            dlat = math.radians(data.lat - RANCHO_LAT)
-            dlng = math.radians(data.lng - RANCHO_LNG)
-            a = math.sin(dlat/2)**2 + math.cos(math.radians(RANCHO_LAT)) * math.cos(math.radians(data.lat)) * math.sin(dlng/2)**2
-            distancia = 6371000 * 2 * math.asin(math.sqrt(a))
-            if distancia > RADIO_METROS:
-                hora = hora_mexico().strftime('%d/%m/%Y %H:%M')
-                enviar_telegram(
-                    f"⚠️ ALERTA CORRALIA\n"
-                    f"👤 {usuario['nombre']} ({usuario['rol']})\n"
-                    f"📍 Está a {int(distancia)}m del rancho\n"
-                    f"🕐 {hora}\n"
-                    f"💸 Multa aplicable: $50"
-                )
-        else:
-            hora = hora_mexico().strftime('%d/%m/%Y %H:%M')
-            enviar_telegram(
-                f"⚠️ ALERTA CORRALIA\n"
-                f"👤 {usuario['nombre']} ({usuario['rol']})\n"
-                f"📍 No compartió ubicación\n"
-                f"🕐 {hora}\n"
-                f"💸 Multa aplicable: $50"
-            )
-
-    verificar_alertas_preñez()
-    execute("UPDATE usuarios SET ultimo_acceso = %s WHERE id = %s",
-            (hora_mexico(), usuario["id"]))
-    return {
-        "token": crear_token(usuario),
-        "usuario": {
-            "id": usuario["id"],
-            "nombre": usuario["nombre"],
-            "rol": usuario["rol"],
-            "primer_acceso": bool(usuario["primer_acceso"])
-        }
-    }
+app.include_router(auth.router)
+app.include_router(mapa.router)
+app.include_router(movimientos.router)
 
 # ── Mapa ──────────────────────────────────────────────────────────────────────
-@app.get("/mapa")
-def get_mapa(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT c.id, c.nombre, c.tipo, c.zona, c.capacidad_max,
-               IFNULL(c.area_m2, c.largo * c.ancho) AS area_m2,
-               IFNULL(SUM(l.poblacion_actual), 0) AS poblacion_actual,
-               IFNULL(GROUP_CONCAT(
-                   DISTINCT l.tipo_animal ORDER BY l.tipo_animal SEPARATOR ' / '
-               ), 'VACIO') AS tipo_animal,
-               MAX(l.fecha_parto_estimada) AS fecha_parto,
-               GROUP_CONCAT(
-                   DISTINCT l.estado_pie_cria ORDER BY l.estado_pie_cria SEPARATOR ', '
-               ) AS estado_pie_cria,
-               MAX(CASE WHEN l.tipo_animal = 'Pie de Cría' THEN l.id END) AS lote_id,
-               MAX(CASE WHEN l.tipo_animal = 'Pie de Cría' THEN l.foto_pie_cria END) AS foto_pie_cria
-        FROM chiqueros c
-        LEFT JOIN lotes l ON c.id = l.id_chiquero AND l.poblacion_actual > 0
-        GROUP BY c.id
-        ORDER BY c.zona, CAST(REGEXP_SUBSTR(c.nombre, '[0-9]+') AS UNSIGNED), c.nombre
-    """)
 
 @app.get("/")
 def root():
     return {"status": "Corralia API v4 corriendo"}
 
-# ── Muerte ────────────────────────────────────────────────────────────────────
-class MuerteRequest(BaseModel):
-    id_chiquero: int
-    tipo_animal: str
-    cantidad: int
-    causa: str
-
-@app.post("/muerte")
-def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
-    execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_chiquero, data.tipo_animal)
-    )
-    execute(
-        """INSERT INTO historial_movimientos
-           (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
-           VALUES (%s, %s, %s, 'MUERTE', %s, %s, %s)""",
-        (data.id_chiquero, data.tipo_animal, data.cantidad,
-         usuario["nombre"], f"Causa: {data.causa}", hora_mexico())
-    )
-    enviar_telegram(
-        f"💀 MUERTE\n"
-        f"👤 {usuario['nombre']}\n"
-        f"🐖 {data.cantidad} {data.tipo_animal}\n"
-        f"📋 Causa: {data.causa}\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-    )
-    return {"ok": True}
-
-# ── Traslado ──────────────────────────────────────────────────────────────────
-class TrasladoRequest(BaseModel):
-    id_origen: int
-    id_destino: int
-    tipo_animal: str
-    cantidad: int
-    nueva_etapa: str | None = None
-
-@app.post("/traslado")
-def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
-    tipo_destino = data.nueva_etapa or data.tipo_animal
-    execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_origen, data.tipo_animal)
-    )
-    execute(
-    """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada, estado_pie_cria)
-       VALUES (%s, %s, %s, %s, IF(%s = 'Pie de Cría', 'Disponible', NULL))
-       ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-    (data.id_destino, tipo_destino, data.cantidad, hora_mexico(), tipo_destino)
-    )
-    
-    execute(
-        """INSERT INTO historial_movimientos
-           (id_chiquero_origen, id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
-           VALUES (%s, %s, %s, %s, 'TRASPASO', %s, %s, %s)""",
-        (data.id_origen, data.id_destino, data.tipo_animal, data.cantidad,
-         usuario["nombre"],
-         f"Avance de etapa: {data.tipo_animal} → {tipo_destino}" if data.nueva_etapa else f"Traspaso de {data.cantidad} {data.tipo_animal}",
-         hora_mexico())
-    )
-    corral_origen = fetch_one("SELECT nombre, zona FROM chiqueros WHERE id = %s", (data.id_origen,))
-    corral_destino = fetch_one("SELECT nombre, zona FROM chiqueros WHERE id = %s", (data.id_destino,))
-    enviar_telegram(
-        f"🔄 TRASPASO\n"
-        f"👤 {usuario['nombre']}\n"
-        f"🐖 {data.cantidad} {data.tipo_animal}\n"
-        f"📍 {corral_origen['zona']} {corral_origen['nombre']} → {corral_destino['zona']} {corral_destino['nombre']}\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-    )
-    return {"ok": True}
-
-@app.get("/corrales-destino")
-def get_corrales_destino(tipo_animal: str, excluir_id: int, usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT c.id, c.nombre, c.zona, c.tipo, c.capacidad_max,
-               IFNULL(SUM(l.poblacion_actual), 0) AS poblacion_actual
-        FROM chiqueros c
-        LEFT JOIN lotes l ON c.id = l.id_chiquero AND l.poblacion_actual > 0
-        WHERE c.id != %s
-        GROUP BY c.id
-        ORDER BY c.zona, CAST(REGEXP_SUBSTR(c.nombre, '[0-9]+') AS UNSIGNED), c.nombre
-    """, (excluir_id,))
-
-# ── Cambio de Etapa ───────────────────────────────────────────────────────────
-class EtapaRequest(BaseModel):
-    id_chiquero: int
-    tipo_animal: str
-    nueva_etapa: str
-    cantidad: int
-
-@app.post("/etapa")
-def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
-    execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_chiquero, data.tipo_animal)
-    )
-    execute(
-        """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
-           VALUES (%s, %s, %s, %s)
-           ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-        (data.id_chiquero, data.nueva_etapa, data.cantidad, hora_mexico())
-    )
-    execute(
-        """INSERT INTO historial_movimientos
-           (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
-           VALUES (%s, %s, %s, 'CAMBIO_ESTADO', %s, %s, %s)""",
-        (data.id_chiquero, data.nueva_etapa, data.cantidad,
-         usuario["nombre"],
-         f"Cambio de etapa: {data.tipo_animal} → {data.nueva_etapa} sin traspaso fisico",
-         hora_mexico())
-    )
-    return {"ok": True}
-
-# ── Parto ─────────────────────────────────────────────────────────────────────
-class PartoRequest(BaseModel):
-    id_chiquero: int
-    crias_vivas: int
-    no_logradas: int
-
-@app.post("/parto")
-def registrar_parto(data: PartoRequest, usuario=Depends(verificar_token)):
-    if data.crias_vivas > 0:
-        execute(
-            """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual)
-               VALUES (%s, 'Crías', %s)
-               ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-            (data.id_chiquero, data.crias_vivas)
-        )
-        execute(
-            """INSERT INTO historial_movimientos
-               (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
-               VALUES (%s, 'Crías', %s, 'PARTO', %s, %s, %s)""",
-            (data.id_chiquero, data.crias_vivas, usuario["nombre"],
-             f"Parto: {data.crias_vivas} crías vivas", hora_mexico())
-        )
-    if data.no_logradas > 0:
-        execute(
-            """INSERT INTO historial_movimientos
-               (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
-               VALUES (%s, 'Crías', %s, 'MUERTE', %s, %s, %s)""",
-            (data.id_chiquero, data.no_logradas, usuario["nombre"],
-             f"Parto: {data.no_logradas} no logradas", hora_mexico())
-        )
-    execute(
-        """UPDATE lotes SET estado_pie_cria = 'Parida'
-           WHERE id_chiquero = %s AND tipo_animal = 'Pie de Cría'""",
-        (data.id_chiquero,)
-    )
-    enviar_telegram(
-        f"🍼 PARTO\n"
-        f"👤 {usuario['nombre']}\n"
-        f"✅ {data.crias_vivas} crías vivas\n"
-        f"❌ {data.no_logradas} no logradas\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-    )
-    return {"ok": True}
 
 # ── Ventas ────────────────────────────────────────────────────────────────────
 @app.get("/clientes")
@@ -477,15 +185,7 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
         f"📦 {len(data.items)} productos\n"
         f"💵 ${total:,.2f}\n"
         f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-        )
-    if data.descuento > 0:
-     execute(
-        """INSERT INTO almacen
-           (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha)
-           VALUES ('entrada', 'Descuento', 'Descuento en compra', 0, 'pieza', %s, %s, %s, %s)""",
-        (-data.descuento, f"Descuento aplicado a compra", usuario["nombre"], fecha)
     )
-    
     return {"ok": True}
 
 class RevolturaRequest(BaseModel):
@@ -1167,20 +867,6 @@ def get_gastos(usuario=Depends(verificar_token)):
         LIMIT 100
     """)
 
-@app.get("/historial/movimientos")
-def get_historial_movimientos(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT h.tipo_evento, h.tipo_animal, h.cantidad, h.notas,
-               h.id_usuario, h.fecha,
-               CONCAT(co.zona, ' ', co.nombre) AS corral_origen,
-            CONCAT(cd.zona, ' ', cd.nombre) AS corral_destino
-        FROM historial_movimientos h
-        LEFT JOIN chiqueros co ON co.id = h.id_chiquero_origen
-        LEFT JOIN chiqueros cd ON cd.id = h.id_chiquero_destino
-        ORDER BY h.fecha DESC
-        LIMIT 100
-    """)
-
 @app.get("/almacen/historial-alimento")
 def get_historial_alimento(usuario=Depends(verificar_token)):
     return fetch_all("""
@@ -1469,21 +1155,18 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     if dias_desde_domingo == 0:
         dias_desde_domingo = 7
     domingo_inicio = dia - timedelta(days=dias_desde_domingo)
+
+
+
+
+
+
+    
     domingo_fin = domingo_inicio + timedelta(days=6)
     lunes = domingo_inicio
     domingo = domingo_fin
 
     # Ingresos
-        # Sobrante semana anterior
-    semana_ant_inicio = domingo_inicio - timedelta(days=7)
-    semana_ant_fin = domingo_inicio - timedelta(days=1)
-
-    dep_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND DATE(fecha) < %s", (domingo_inicio,))
-    ven_ant = fetch_one("SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas WHERE DATE(fecha) < %s", (domingo_inicio,))
-    nom_ant = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo' AND DATE(fecha) < %s", (domingo_inicio,))
-    gas_ant = fetch_one("SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL AND DATE(fecha) < %s", (domingo_inicio,))
-    sobrante_anterior = float(dep_ant['t']) + float(ven_ant['t']) - float(nom_ant['t']) - float(gas_ant['t'])
-    sobrante_anterior = max(sobrante_anterior, 0)  # Si fue negativo no se arrastra
     depositos = fetch_all("""
         SELECT monto, notas, fecha FROM finanzas 
         WHERE tipo='deposito' AND DATE(fecha) BETWEEN %s AND %s
@@ -1526,12 +1209,12 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     """, (lunes, domingo))
 
     compras_alimento = fetch_all("""
-    SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
-    FROM almacen
-    WHERE tipo='entrada' AND DATE(fecha) BETWEEN %s AND %s
-    AND categoria IN ('Ingredientes revoltura', 'Pellet', 'Descuento')
-    ORDER BY fecha DESC
-""", (lunes, domingo))
+        SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
+        FROM almacen
+        WHERE tipo='entrada' AND DATE(fecha) BETWEEN %s AND %s
+        AND categoria IN ('Ingredientes revoltura', 'Pellet')
+        ORDER BY fecha DESC
+    """, (lunes, domingo))
 
     # Totales
     total_depositos = sum(float(d['monto']) for d in depositos)
@@ -1545,10 +1228,9 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
         "ingresos": {
             "depositos": depositos,
             "ventas": ventas,
-            "sobrante_anterior": sobrante_anterior,
             "total_depositos": total_depositos,
             "total_ventas": total_ventas,
-            "total": total_depositos + total_ventas + sobrante_anterior
+            "total": total_depositos + total_ventas
         },
         "gastos": {
             "nomina": nomina,
@@ -1560,6 +1242,5 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
             "total_otros": total_gastos_otros,
             "total": total_nomina + total_compras + total_gastos_otros
         },
-        "sobrante": (total_depositos + total_ventas + sobrante_anterior) - (total_nomina + total_compras + total_gastos_otros)
+        "sobrante": (total_depositos + total_ventas) - (total_nomina + total_compras + total_gastos_otros)
     }
-

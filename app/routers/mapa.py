@@ -1,0 +1,29 @@
+from fastapi import APIRouter, Depends
+
+from database import fetch_all
+from app.core.security import verificar_token
+
+
+router = APIRouter(tags=["Mapa"])
+
+
+@router.get("/mapa")
+def get_mapa(usuario=Depends(verificar_token)):
+    return fetch_all("""
+        SELECT c.id, c.nombre, c.tipo, c.zona, c.capacidad_max,
+               IFNULL(c.area_m2, c.largo * c.ancho) AS area_m2,
+               IFNULL(SUM(l.poblacion_actual), 0) AS poblacion_actual,
+               IFNULL(GROUP_CONCAT(
+                   DISTINCT l.tipo_animal ORDER BY l.tipo_animal SEPARATOR ' / '
+               ), 'VACIO') AS tipo_animal,
+               MAX(l.fecha_parto_estimada) AS fecha_parto,
+               GROUP_CONCAT(
+                   DISTINCT l.estado_pie_cria ORDER BY l.estado_pie_cria SEPARATOR ', '
+               ) AS estado_pie_cria,
+               MAX(CASE WHEN l.tipo_animal = 'Pie de Cría' THEN l.id END) AS lote_id,
+               MAX(CASE WHEN l.tipo_animal = 'Pie de Cría' THEN l.foto_pie_cria END) AS foto_pie_cria
+        FROM chiqueros c
+        LEFT JOIN lotes l ON c.id = l.id_chiquero AND l.poblacion_actual > 0
+        GROUP BY c.id
+        ORDER BY c.zona, CAST(REGEXP_SUBSTR(c.nombre, '[0-9]+') AS UNSIGNED), c.nombre
+    """)
