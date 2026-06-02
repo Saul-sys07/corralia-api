@@ -1,33 +1,37 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from datetime import datetime, timedelta
-import math
 import cloudinary
-import cloudinary.uploader
-
-from database import fetch_one, fetch_all, execute
 
 from app.core.config import (
     CLOUDINARY_CLOUD_NAME,
     CLOUDINARY_API_KEY,
     CLOUDINARY_API_SECRET,
     CORS_ORIGINS,
-    RANCHO_LAT,
-    RANCHO_LNG,
-    RADIO_METROS,
 )
 
-from app.core.time import hora_mexico
-from app.core.telegram import enviar_telegram
-from app.core.security import crear_token, verificar_token
-from app.routers import auth, mapa, movimientos, clientes, ventas, almacen, finanzas, checador, vacunas, usuarios, configuracion, notificaciones, monta, apartados, reportes
+from app.routers import (
+    auth,
+    mapa,
+    movimientos,
+    clientes,
+    ventas,
+    almacen,
+    finanzas,
+    checador,
+    vacunas,
+    usuarios,
+    configuracion,
+    notificaciones,
+    monta,
+    apartados,
+    reportes,
+)
 
 
 cloudinary.config(
     cloud_name=CLOUDINARY_CLOUD_NAME,
     api_key=CLOUDINARY_API_KEY,
-    api_secret=CLOUDINARY_API_SECRET
+    api_secret=CLOUDINARY_API_SECRET,
 )
 
 app = FastAPI(title="Corralia API v4")
@@ -55,6 +59,7 @@ app.include_router(notificaciones.router)
 app.include_router(monta.router)
 app.include_router(apartados.router)
 app.include_router(reportes.router)
+
 
 @app.get("/")
 def root():
