@@ -21,7 +21,7 @@ from app.core.config import (
 from app.core.time import hora_mexico
 from app.core.telegram import enviar_telegram
 from app.core.security import crear_token, verificar_token
-from app.routers import auth, mapa, movimientos
+from app.routers import auth, mapa, movimientos, clientes, ventas
 
 
 cloudinary.config(
@@ -43,81 +43,14 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(mapa.router)
 app.include_router(movimientos.router)
+app.include_router(clientes.router)
+app.include_router(ventas.router)
 
 # ── Mapa ──────────────────────────────────────────────────────────────────────
 
 @app.get("/")
 def root():
     return {"status": "Corralia API v4 corriendo"}
-
-
-# ── Ventas ────────────────────────────────────────────────────────────────────
-@app.get("/clientes")
-def get_clientes(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT c.*, u.nombre AS vendedor
-        FROM clientes c
-        JOIN usuarios u ON u.id = c.usuario_id
-        WHERE c.activo = 1 ORDER BY c.nombre
-    """)
-
-@app.get("/precio-dia")
-def get_precio_dia(usuario=Depends(verificar_token)):
-    row = fetch_one("SELECT valor FROM configuracion WHERE clave = 'precio_kg'")
-    return {"precio": float(row["valor"]) if row else 48.00}
-
-class VentaRequest(BaseModel):
-    cliente_id: int
-    id_chiquero: int
-    tipo_animal: str
-    cantidad: int
-    peso_kg: float
-    precio_kg: float
-    precio_cabeza: float
-    comision_kg: float
-    total_rancho: float
-    total_comision: float
-    es_destete: bool
-
-@app.post("/venta")
-def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
-    execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_chiquero, data.tipo_animal)
-    )
-    precio_final = data.precio_cabeza if data.es_destete else data.precio_kg
-    execute(
-        """INSERT INTO ventas
-           (cliente_id, usuario_id, tipo_animal, cantidad, peso_kg, precio_kg,
-            comision_kg, total_rancho, total_comision, foto_bascula)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '')""",
-        (data.cliente_id, usuario["id"], data.tipo_animal, data.cantidad,
-         data.peso_kg, precio_final, data.comision_kg,
-         data.total_rancho, data.total_comision)
-    )
-    execute(
-        """INSERT INTO historial_movimientos
-           (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
-           VALUES (%s, %s, %s, 'VENTA', %s, %s, %s)""",
-        (data.id_chiquero, data.tipo_animal, data.cantidad,
-         usuario["nombre"],
-         f"Venta — ${data.total_rancho:,.2f}", hora_mexico())
-    )
-    cliente_actual = fetch_one("SELECT tipo FROM clientes WHERE id = %s", (data.cliente_id,))
-    if cliente_actual:
-        if cliente_actual["tipo"] in ("Nuevo", "Recuperado"):
-            execute("UPDATE clientes SET tipo = 'Retenido' WHERE id = %s", (data.cliente_id,))
-    execute("UPDATE clientes SET ultimo_pedido = %s WHERE id = %s",
-            (hora_mexico(), data.cliente_id))
-    enviar_telegram(
-        f"💰 VENTA\n"
-        f"👤 {usuario['nombre']}\n"
-        f"🐖 {data.cantidad} {data.tipo_animal} — {data.peso_kg}kg\n"
-        f"💵 ${data.total_rancho:,.2f}\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-    )
-    return {"ok": True, "mensaje": f"Venta registrada — ${data.total_rancho:,.2f}"}
 
 # ── Almacen ───────────────────────────────────────────────────────────────────
 @app.get("/almacen/inventario")
@@ -479,77 +412,6 @@ def get_reporte_mensual(mes: int, anio: int, usuario=Depends(verificar_token)):
             "muertes": int(muertes_ant["t"])
         }
     }
-
-# ── Clientes ──────────────────────────────────────────────────────────────────
-@app.get("/clientes/lista")
-def get_clientes_lista(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT c.id, c.nombre, c.telefono, c.tipo, u.nombre AS vendedor,
-               COUNT(v.id) AS num_compras,
-               IFNULL(SUM(v.total_rancho), 0) AS total_comprado
-        FROM clientes c
-        JOIN usuarios u ON u.id = c.usuario_id
-        LEFT JOIN ventas v ON v.cliente_id = c.id
-        WHERE c.activo = 1
-        GROUP BY c.id ORDER BY c.nombre
-    """)
-
-class ClienteRequest(BaseModel):
-    nombre: str
-    telefono: str
-    tipo: str
-    usuario_id: int
-
-@app.post("/clientes")
-def crear_cliente(data: ClienteRequest, usuario=Depends(verificar_token)):
-    existente = fetch_one("SELECT id FROM clientes WHERE telefono = %s", (data.telefono,))
-    if existente:
-        raise HTTPException(status_code=400, detail="Ya existe un cliente con ese teléfono")
-    execute(
-        "INSERT INTO clientes (nombre, telefono, tipo, usuario_id) VALUES (%s, %s, %s, %s)",
-        (data.nombre, data.telefono, data.tipo, data.usuario_id)
-    )
-    return {"ok": True}
-
-@app.post("/clientes/actualizar-ciclo")
-def actualizar_ciclo_clientes(usuario=Depends(verificar_token)):
-    from datetime import datetime, timedelta
-    hace_un_anio = datetime.now() - timedelta(days=365)
-    execute("""
-        UPDATE clientes SET tipo = 'Disponible'
-        WHERE tipo = 'Retenido'
-        AND (ultimo_pedido IS NULL OR ultimo_pedido < %s)
-    """, (hace_un_anio,))
-    return {"ok": True}
-
-# ── Ventas historial ──────────────────────────────────────────────────────────
-@app.get("/ventas/historial")
-def get_historial_ventas(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT v.fecha, c.nombre AS cliente, c.tipo AS tipo_cliente,
-               u.nombre AS registrado_por,
-               uc.nombre AS vendedor_cliente,
-               v.tipo_animal, v.cantidad,
-               v.peso_kg, v.precio_kg, v.total_rancho, v.total_comision
-        FROM ventas v
-        JOIN clientes c ON c.id = v.cliente_id
-        JOIN usuarios u ON u.id = v.usuario_id
-        JOIN usuarios uc ON uc.id = c.usuario_id
-        ORDER BY v.fecha DESC LIMIT 100
-    """)
-
-@app.get("/ventas/comisiones")
-def get_comisiones(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT u.nombre AS vendedor,
-               COUNT(v.id) AS num_ventas,
-               IFNULL(SUM(v.total_comision), 0) AS total_comision,
-               IFNULL(SUM(v.peso_kg), 0) AS kg_vendidos
-        FROM ventas v
-        JOIN usuarios u ON u.id = v.usuario_id
-        GROUP BY v.usuario_id
-        ORDER BY total_comision DESC
-    """)
 
 # ── Configuracion ─────────────────────────────────────────────────────────────
 @app.get("/configuracion/precio")
