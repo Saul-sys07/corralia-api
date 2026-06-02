@@ -21,7 +21,7 @@ from app.core.config import (
 from app.core.time import hora_mexico
 from app.core.telegram import enviar_telegram
 from app.core.security import crear_token, verificar_token
-from app.routers import auth, mapa, movimientos, clientes, ventas, almacen, finanzas, checador
+from app.routers import auth, mapa, movimientos, clientes, ventas, almacen, finanzas, checador, vacunas
 
 
 cloudinary.config(
@@ -48,41 +48,11 @@ app.include_router(ventas.router)
 app.include_router(almacen.router)
 app.include_router(finanzas.router)
 app.include_router(checador.router)
+app.include_router(vacunas.router)
 
 @app.get("/")
 def root():
     return {"status": "Corralia API v4 corriendo"}
-
-# ── Vacunas ───────────────────────────────────────────────────────────────────
-@app.get("/vacunas/historial")
-def get_historial_vacunas(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT v.fecha, c.nombre AS corral, v.tipo_animal,
-               v.vacuna, v.nombre_comercial, v.cantidad, v.notas, v.usuario_id
-        FROM vacunaciones v
-        JOIN chiqueros c ON c.id = v.id_chiquero
-        ORDER BY v.fecha DESC LIMIT 50
-    """)
-
-class VacunaRequest(BaseModel):
-    id_chiquero: int
-    tipo_animal: str
-    vacuna: str
-    nombre_comercial: str = ''
-    cantidad: int
-    notas: str = ''
-
-@app.post("/vacunas")
-def registrar_vacuna(data: VacunaRequest, usuario=Depends(verificar_token)):
-    execute(
-        """INSERT INTO vacunaciones
-           (id_chiquero, tipo_animal, vacuna, nombre_comercial, cantidad, notas, usuario_id, fecha)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-        (data.id_chiquero, data.tipo_animal, data.vacuna,
-         data.nombre_comercial or None, data.cantidad,
-         data.notas or None, usuario["nombre"], hora_mexico())
-    )
-    return {"ok": True}
 
 # ── Reportes ──────────────────────────────────────────────────────────────────
 @app.get("/reportes/mensual")
