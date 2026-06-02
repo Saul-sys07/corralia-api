@@ -21,7 +21,7 @@ from app.core.config import (
 from app.core.time import hora_mexico
 from app.core.telegram import enviar_telegram
 from app.core.security import crear_token, verificar_token
-from app.routers import auth, mapa, movimientos, clientes, ventas, almacen, finanzas, checador, vacunas, usuarios, configuracion, notificaciones
+from app.routers import auth, mapa, movimientos, clientes, ventas, almacen, finanzas, checador, vacunas, usuarios, configuracion, notificaciones, monta
 
 
 cloudinary.config(
@@ -52,6 +52,7 @@ app.include_router(vacunas.router)
 app.include_router(usuarios.router)
 app.include_router(configuracion.router)
 app.include_router(notificaciones.router)
+app.include_router(monta.router)
 
 @app.get("/")
 def root():
@@ -152,93 +153,6 @@ def get_ica(fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(ver
             'fecha_fin': str(ff)
         })
     return resultado
-
-# ── Monta ─────────────────────────────────────────────────────────────────────
-class MonitaRequest(BaseModel):
-    lote_id: int
-    fecha_monta: str
-    foto_base64: str | None = None
-
-@app.post("/monta")
-def registrar_monta(data: MonitaRequest, usuario=Depends(verificar_token)):
-    from datetime import timedelta
-    fecha_monta = datetime.strptime(data.fecha_monta, "%Y-%m-%d").date()
-    fecha_parto = fecha_monta + timedelta(days=114)
-    
-    # Subir foto si viene
-    foto_url = None
-    if data.foto_base64:
-        nombre_foto = f"corralia/montas/{data.lote_id}_{fecha_monta}"
-        resultado = cloudinary.uploader.upload(
-            f"data:image/jpeg;base64,{data.foto_base64}",
-            public_id=nombre_foto,
-            overwrite=True
-        )
-        foto_url = resultado["secure_url"]
-
-    execute("""
-        UPDATE lotes SET 
-            estado_pie_cria = 'Montada',
-            fecha_monta = %s,
-            fecha_parto_estimada = %s,
-            foto_pie_cria = %s
-        WHERE id = %s
-    """, (fecha_monta, fecha_parto, foto_url, data.lote_id))
-
-    # Obtener nombre del corral
-    lote = fetch_one("""
-        SELECT c.nombre AS corral FROM lotes l
-        JOIN chiqueros c ON c.id = l.id_chiquero
-        WHERE l.id = %s
-    """, (data.lote_id,))
-
-    enviar_telegram(
-        f"🐷 MONTA REGISTRADA\n"
-        f"👤 {usuario['nombre']}\n"
-        f"📍 {lote['corral']}\n"
-        f"📅 Fecha monta: {fecha_monta}\n"
-        f"📅 Parto estimado: {fecha_parto}\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-    )
-    return {"ok": True, "fecha_parto": str(fecha_parto)}
-
-class VerificarPreñezRequest(BaseModel):
-    lote_id: int
-    confirma_preñez: bool
-
-@app.post("/monta/verificar")
-def verificar_preñez(data: VerificarPreñezRequest, usuario=Depends(verificar_token)):
-    lote = fetch_one("""
-        SELECT l.*, c.nombre AS corral FROM lotes l
-        JOIN chiqueros c ON c.id = l.id_chiquero
-        WHERE l.id = %s
-    """, (data.lote_id,))
-
-    if data.confirma_preñez:
-        execute("UPDATE lotes SET estado_pie_cria = 'Gestante' WHERE id = %s", (data.lote_id,))
-        enviar_telegram(
-            f"✅ PREÑEZ CONFIRMADA\n"
-            f"👤 {usuario['nombre']}\n"
-            f"📍 {lote['corral']}\n"
-            f"📅 Parto estimado: {lote['fecha_parto_estimada']}\n"
-            f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-        )
-    else:
-        execute("""
-            UPDATE lotes SET 
-                estado_pie_cria = 'Disponible',
-                fecha_monta = NULL,
-                fecha_parto_estimada = NULL
-            WHERE id = %s
-        """, (data.lote_id,))
-        enviar_telegram(
-            f"❌ REGRESÓ A CALOR\n"
-            f"👤 {usuario['nombre']}\n"
-            f"📍 {lote['corral']}\n"
-            f"🐷 Vuelve a estado Disponible\n"
-            f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
-        )
-    return {"ok": True}
 
 # ── Apartados ─────────────────────────────────────────────────────────────────
 class ApartadoRequest(BaseModel):
