@@ -21,7 +21,7 @@ from app.core.config import (
 from app.core.time import hora_mexico
 from app.core.telegram import enviar_telegram
 from app.core.security import crear_token, verificar_token
-from app.routers import auth, mapa, movimientos, clientes, ventas, almacen, finanzas, checador, vacunas
+from app.routers import auth, mapa, movimientos, clientes, ventas, almacen, finanzas, checador, vacunas, usuarios
 
 
 cloudinary.config(
@@ -49,6 +49,7 @@ app.include_router(almacen.router)
 app.include_router(finanzas.router)
 app.include_router(checador.router)
 app.include_router(vacunas.router)
+app.include_router(usuarios.router)
 
 @app.get("/")
 def root():
@@ -242,75 +243,6 @@ def reset_nuclear(data: NuclearRequest, usuario=Depends(verificar_token)):
     execute("""UPDATE usuarios SET primer_acceso = 1, pin = pin_temporal
                WHERE rol != 'admin' AND pin_temporal IS NOT NULL""")
     return {"ok": True, "mensaje": "Sistema limpiado — listo para datos reales"}
-
-# ── Usuarios ──────────────────────────────────────────────────────────────────
-@app.get("/usuarios")
-def get_usuarios(usuario=Depends(verificar_token)):
-    return fetch_all("""
-        SELECT id, nombre, rol, activo, ultimo_acceso
-        FROM usuarios ORDER BY nombre
-    """)
-
-class UsuarioRequest(BaseModel):
-    nombre: str
-    rol: str
-    pin_temporal: str
-
-@app.post("/usuarios")
-def crear_usuario(data: UsuarioRequest, usuario=Depends(verificar_token)):
-    existente = fetch_one("SELECT id FROM usuarios WHERE nombre = %s", (data.nombre,))
-    if existente:
-        raise HTTPException(status_code=400, detail="Ya existe un usuario con ese nombre")
-    execute(
-        """INSERT INTO usuarios (nombre, pin, pin_temporal, rol, primer_acceso)
-           VALUES (%s, %s, %s, %s, 1)""",
-        (data.nombre, data.pin_temporal, data.pin_temporal, data.rol)
-    )
-    return {"ok": True}
-
-@app.post("/usuarios/toggle")
-def toggle_usuario(usuario_id: int, usuario=Depends(verificar_token)):
-    execute(
-        "UPDATE usuarios SET activo = NOT activo WHERE id = %s",
-        (usuario_id,)
-    )
-    return {"ok": True}
-
-class ActivarRequest(BaseModel):
-    usuario_id: int
-    nuevo_pin: str
-
-@app.post("/usuarios/activar")
-def activar_usuario(data: ActivarRequest):
-    existente = fetch_one(
-        "SELECT id FROM usuarios WHERE pin = %s AND id != %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    if existente:
-        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
-    execute(
-        "UPDATE usuarios SET pin = %s, pin_temporal = NULL, primer_acceso = 0 WHERE id = %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    return {"ok": True}
-
-class ResetPinRequest(BaseModel):
-    usuario_id: int
-    nuevo_pin: str
-
-@app.post("/usuarios/reset-pin")
-def reset_pin(data: ResetPinRequest, usuario=Depends(verificar_token)):
-    existente = fetch_one(
-        "SELECT id FROM usuarios WHERE pin = %s AND id != %s",
-        (data.nuevo_pin, data.usuario_id)
-    )
-    if existente:
-        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
-    execute(
-        "UPDATE usuarios SET pin = %s, pin_temporal = %s, primer_acceso = 1 WHERE id = %s",
-        (data.nuevo_pin, data.nuevo_pin, data.usuario_id)
-    )
-    return {"ok": True}
 
 @app.get("/reportes/ica")
 def get_ica(fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(verificar_token)):
