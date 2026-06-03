@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from database import fetch_one, fetch_all, execute
 from app.core.security import verificar_token
@@ -52,10 +52,43 @@ def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
 def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
     tipo_destino = data.nueva_etapa or data.tipo_animal
 
+    if data.cantidad <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La cantidad debe ser mayor a 0"
+        )
+
+    lote_origen = fetch_one("""
+        SELECT id, poblacion_actual
+        FROM lotes
+        WHERE id_chiquero = %s
+        AND tipo_animal = %s
+        AND poblacion_actual > 0
+        LIMIT 1
+    """, (data.id_origen, data.tipo_animal))
+
+    if not lote_origen:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay {data.tipo_animal} disponibles en el corral origen"
+        )
+
+    poblacion_origen = int(lote_origen["poblacion_actual"])
+
+    if poblacion_origen < data.cantidad:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No hay suficientes {data.tipo_animal} en el corral origen. "
+                f"Disponibles: {poblacion_origen}, intento de traslado: {data.cantidad}"
+            )
+        )
+
     execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_origen, data.tipo_animal)
+        """UPDATE lotes
+           SET poblacion_actual = poblacion_actual - %s
+           WHERE id = %s""",
+        (data.cantidad, lote_origen["id"])
     )
 
     execute(
