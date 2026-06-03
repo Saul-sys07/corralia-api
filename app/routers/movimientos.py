@@ -17,10 +17,43 @@ router = APIRouter(tags=["Movimientos"])
 
 @router.post("/muerte")
 def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
+    if data.cantidad <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La cantidad debe ser mayor a 0"
+        )
+
+    lote = fetch_one("""
+        SELECT id, poblacion_actual
+        FROM lotes
+        WHERE id_chiquero = %s
+        AND tipo_animal = %s
+        AND poblacion_actual > 0
+        LIMIT 1
+    """, (data.id_chiquero, data.tipo_animal))
+
+    if not lote:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay {data.tipo_animal} disponibles en ese corral"
+        )
+
+    poblacion_actual = int(lote["poblacion_actual"])
+
+    if poblacion_actual < data.cantidad:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No hay suficientes {data.tipo_animal} para registrar la muerte. "
+                f"Disponibles: {poblacion_actual}, intento de muerte: {data.cantidad}"
+            )
+        )
+
     execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_chiquero, data.tipo_animal)
+        """UPDATE lotes
+           SET poblacion_actual = poblacion_actual - %s
+           WHERE id = %s""",
+        (data.cantidad, lote["id"])
     )
 
     execute(
@@ -164,17 +197,55 @@ def get_corrales_destino(
 
 @router.post("/etapa")
 def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
+    if data.cantidad <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La cantidad debe ser mayor a 0"
+        )
+
+    lote_origen = fetch_one("""
+        SELECT id, poblacion_actual
+        FROM lotes
+        WHERE id_chiquero = %s
+        AND tipo_animal = %s
+        AND poblacion_actual > 0
+        LIMIT 1
+    """, (data.id_chiquero, data.tipo_animal))
+
+    if not lote_origen:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay {data.tipo_animal} disponibles en ese corral"
+        )
+
+    poblacion_origen = int(lote_origen["poblacion_actual"])
+
+    if poblacion_origen < data.cantidad:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No hay suficientes {data.tipo_animal} para cambiar de etapa. "
+                f"Disponibles: {poblacion_origen}, intento de cambio: {data.cantidad}"
+            )
+        )
+
     execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_chiquero, data.tipo_animal)
+        """UPDATE lotes
+           SET poblacion_actual = poblacion_actual - %s
+           WHERE id = %s""",
+        (data.cantidad, lote_origen["id"])
     )
 
     execute(
         """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
            VALUES (%s, %s, %s, %s)
            ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-        (data.id_chiquero, data.nueva_etapa, data.cantidad, hora_mexico())
+        (
+            data.id_chiquero,
+            data.nueva_etapa,
+            data.cantidad,
+            hora_mexico(),
+        )
     )
 
     execute(

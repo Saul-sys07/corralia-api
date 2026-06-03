@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends
-
+from fastapi import APIRouter, Depends, HTTPException
 from database import fetch_one, fetch_all, execute
 from app.core.security import verificar_token
 from app.core.telegram import enviar_telegram
@@ -18,10 +17,43 @@ def get_precio_dia(usuario=Depends(verificar_token)):
 
 @router.post("/venta")
 def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
+    if data.cantidad <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La cantidad debe ser mayor a 0"
+        )
+
+    lote_origen = fetch_one("""
+        SELECT id, poblacion_actual
+        FROM lotes
+        WHERE id_chiquero = %s
+        AND tipo_animal = %s
+        AND poblacion_actual > 0
+        LIMIT 1
+    """, (data.id_chiquero, data.tipo_animal))
+
+    if not lote_origen:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay {data.tipo_animal} disponibles en ese corral"
+        )
+
+    poblacion_origen = int(lote_origen["poblacion_actual"])
+
+    if poblacion_origen < data.cantidad:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No hay suficientes {data.tipo_animal} para vender. "
+                f"Disponibles: {poblacion_origen}, intento de venta: {data.cantidad}"
+            )
+        )
+
     execute(
-        """UPDATE lotes SET poblacion_actual = GREATEST(poblacion_actual - %s, 0)
-           WHERE id_chiquero = %s AND tipo_animal = %s""",
-        (data.cantidad, data.id_chiquero, data.tipo_animal)
+        """UPDATE lotes
+           SET poblacion_actual = poblacion_actual - %s
+           WHERE id = %s""",
+        (data.cantidad, lote_origen["id"])
     )
 
     precio_final = data.precio_cabeza if data.es_destete else data.precio_kg
