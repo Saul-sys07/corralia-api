@@ -40,3 +40,31 @@ def execute(sql, params=None):
     cursor.close()
     conn.close()
     return last_id
+
+def execute_transaction(operations):
+    """
+    Ejecuta varias operaciones SQL dentro de una sola transacción.
+    
+    operations debe ser una lista de tuplas:
+    [
+        ("SQL ...", (params,)),
+        ("SQL ...", (params,))
+    ]
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+        for sql, params in operations:
+            cursor.execute(sql, params or ())
+
+        conn.commit()
+        return True
+
+    except Exception as e:
+        conn.rollback()
+        raise e
+
+    finally:
+        cursor.close()
+        conn.close()

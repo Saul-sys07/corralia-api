@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from database import fetch_one, fetch_all, execute
+from database import fetch_one, fetch_all, execute, execute_transaction
 from app.core.security import verificar_token
 from app.core.telegram import enviar_telegram
 from app.core.time import hora_mexico
@@ -49,16 +49,17 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
             )
         )
 
-    execute(
+    fecha = hora_mexico()
+    precio_final = data.precio_cabeza if data.es_destete else data.precio_kg
+
+    execute_transaction([
+    (
         """UPDATE lotes
            SET poblacion_actual = poblacion_actual - %s
            WHERE id = %s""",
         (data.cantidad, lote_origen["id"])
-    )
-
-    precio_final = data.precio_cabeza if data.es_destete else data.precio_kg
-
-    execute(
+    ),
+    (
         """INSERT INTO ventas
            (cliente_id, usuario_id, tipo_animal, cantidad, peso_kg, precio_kg,
             comision_kg, total_rancho, total_comision, foto_bascula)
@@ -74,9 +75,8 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
             data.total_rancho,
             data.total_comision,
         )
-    )
-
-    execute(
+    ),
+    (
         """INSERT INTO historial_movimientos
            (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
            VALUES (%s, %s, %s, 'VENTA', %s, %s, %s)""",
@@ -86,9 +86,10 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
             data.cantidad,
             usuario["nombre"],
             f"Venta — ${data.total_rancho:,.2f}",
-            hora_mexico(),
+            fecha,
         )
     )
+])
 
     cliente_actual = fetch_one(
         "SELECT tipo FROM clientes WHERE id = %s",
@@ -112,7 +113,7 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
         f"👤 {usuario['nombre']}\n"
         f"🐖 {data.cantidad} {data.tipo_animal} — {data.peso_kg}kg\n"
         f"💵 ${data.total_rancho:,.2f}\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+        f"🕐 {fecha.strftime('%d/%m/%Y %H:%M')}"
     )
 
     return {

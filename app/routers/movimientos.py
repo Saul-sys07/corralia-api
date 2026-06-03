@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from database import fetch_one, fetch_all, execute
+from database import fetch_one, fetch_all, execute, execute_transaction
 from app.core.security import verificar_token
 from app.core.telegram import enviar_telegram
 from app.core.time import hora_mexico
@@ -49,14 +49,16 @@ def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
             )
         )
 
-    execute(
+    fecha = hora_mexico()
+
+    execute_transaction([
+    (
         """UPDATE lotes
            SET poblacion_actual = poblacion_actual - %s
            WHERE id = %s""",
         (data.cantidad, lote["id"])
-    )
-
-    execute(
+    ),
+    (
         """INSERT INTO historial_movimientos
            (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
            VALUES (%s, %s, %s, 'MUERTE', %s, %s, %s)""",
@@ -66,16 +68,17 @@ def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
             data.cantidad,
             usuario["nombre"],
             f"Causa: {data.causa}",
-            hora_mexico(),
+            fecha,
         )
     )
+])
 
     enviar_telegram(
         f"💀 MUERTE\n"
         f"👤 {usuario['nombre']}\n"
         f"🐖 {data.cantidad} {data.tipo_animal}\n"
         f"📋 Causa: {data.causa}\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+        f"🕐 {fecha.strftime('%d/%m/%Y %H:%M')}"
     )
 
     return {"ok": True}
@@ -117,14 +120,16 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
             )
         )
 
-    execute(
+    fecha = hora_mexico()
+
+    execute_transaction([
+    (
         """UPDATE lotes
            SET poblacion_actual = poblacion_actual - %s
            WHERE id = %s""",
         (data.cantidad, lote_origen["id"])
-    )
-
-    execute(
+    ),
+    (
         """INSERT INTO lotes
            (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada, estado_pie_cria)
            VALUES (%s, %s, %s, %s, IF(%s = 'Pie de Cría', 'Disponible', NULL))
@@ -133,12 +138,11 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
             data.id_destino,
             tipo_destino,
             data.cantidad,
-            hora_mexico(),
+            fecha,
             tipo_destino,
         )
-    )
-
-    execute(
+    ),
+    (
         """INSERT INTO historial_movimientos
            (id_chiquero_origen, id_chiquero_destino, tipo_animal, cantidad,
             tipo_evento, id_usuario, notas, fecha)
@@ -152,9 +156,10 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
             f"Avance de etapa: {data.tipo_animal} → {tipo_destino}"
             if data.nueva_etapa
             else f"Traspaso de {data.cantidad} {data.tipo_animal}",
-            hora_mexico(),
+            fecha,
         )
     )
+])
 
     corral_origen = fetch_one(
         "SELECT nombre, zona FROM chiqueros WHERE id = %s",
@@ -172,7 +177,7 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
         f"🐖 {data.cantidad} {data.tipo_animal}\n"
         f"📍 {corral_origen['zona']} {corral_origen['nombre']} → "
         f"{corral_destino['zona']} {corral_destino['nombre']}\n"
-        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}"
+        f"🕐 {fecha.strftime('%d/%m/%Y %H:%M')}"
     )
 
     return {"ok": True}
@@ -229,14 +234,16 @@ def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
             )
         )
 
-    execute(
+    fecha = hora_mexico()
+
+    execute_transaction([
+    (
         """UPDATE lotes
            SET poblacion_actual = poblacion_actual - %s
            WHERE id = %s""",
         (data.cantidad, lote_origen["id"])
-    )
-
-    execute(
+    ),
+    (
         """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
            VALUES (%s, %s, %s, %s)
            ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
@@ -244,11 +251,10 @@ def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
             data.id_chiquero,
             data.nueva_etapa,
             data.cantidad,
-            hora_mexico(),
+            fecha,
         )
-    )
-
-    execute(
+    ),
+    (
         """INSERT INTO historial_movimientos
            (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
            VALUES (%s, %s, %s, 'CAMBIO_ESTADO', %s, %s, %s)""",
@@ -258,9 +264,10 @@ def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
             data.cantidad,
             usuario["nombre"],
             f"Cambio de etapa: {data.tipo_animal} → {data.nueva_etapa} sin traspaso fisico",
-            hora_mexico(),
+            fecha,
         )
     )
+])
 
     return {"ok": True}
 
