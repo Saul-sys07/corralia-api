@@ -6,7 +6,6 @@ from database import fetch_one, fetch_all, execute
 from app.core.security import verificar_token
 from app.core.time import hora_mexico
 
-
 router = APIRouter(tags=["Notificaciones"])
 
 
@@ -53,27 +52,34 @@ def get_notificaciones(usuario=Depends(verificar_token)):
         ]
 
         for fecha_prog, tipo, mensaje in fechas_programadas:
-            existente = fetch_one("""
+            existente = fetch_one(
+                """
                 SELECT id FROM notificaciones
                 WHERE id_lote = %s
                 AND tipo = %s
-            """, (lote["id"], tipo))
+            """,
+                (lote["id"], tipo),
+            )
 
             if not existente and hoy >= fecha_prog:
-                execute("""
+                execute(
+                    """
                     INSERT INTO notificaciones
                     (tipo, mensaje, id_lote, roles_destino, fecha_creacion, fecha_programada)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                """, (
-                    tipo,
-                    mensaje,
-                    lote["id"],
-                    "admin,encargado_general,gestacion",
-                    hora_mexico(),
-                    fecha_prog,
-                ))
+                """,
+                    (
+                        tipo,
+                        mensaje,
+                        lote["id"],
+                        "admin,encargado_general,gestacion",
+                        hora_mexico(),
+                        fecha_prog,
+                    ),
+                )
 
-    notificaciones = fetch_all("""
+    notificaciones = fetch_all(
+        """
         SELECT *
         FROM notificaciones
         WHERE roles_destino LIKE %s
@@ -81,21 +87,20 @@ def get_notificaciones(usuario=Depends(verificar_token)):
         AND fecha_programada <= %s
         ORDER BY fecha_creacion DESC
         LIMIT 20
-    """, (
-        f"%{usuario['rol']}%",
-        f"%{usuario['nombre']}%",
-        hoy,
-    ))
+    """,
+        (
+            f"%{usuario['rol']}%",
+            f"%{usuario['nombre']}%",
+            hoy,
+        ),
+    )
 
     return notificaciones
 
 
 @router.post("/notificaciones/{notif_id}/vista")
 def marcar_vista(notif_id: int, usuario=Depends(verificar_token)):
-    notif = fetch_one(
-        "SELECT visto_por FROM notificaciones WHERE id = %s",
-        (notif_id,)
-    )
+    notif = fetch_one("SELECT visto_por FROM notificaciones WHERE id = %s", (notif_id,))
 
     if notif:
         visto_por = notif["visto_por"] or ""
@@ -105,7 +110,7 @@ def marcar_vista(notif_id: int, usuario=Depends(verificar_token)):
 
             execute(
                 "UPDATE notificaciones SET visto_por = %s WHERE id = %s",
-                (nuevo, notif_id)
+                (nuevo, notif_id),
             )
 
     return {"ok": True}

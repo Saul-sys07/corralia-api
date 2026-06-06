@@ -7,7 +7,6 @@ import jwt
 
 from app.core.config import SECRET_KEY
 
-
 security = HTTPBearer()
 
 
@@ -16,7 +15,7 @@ def crear_token(usuario: dict) -> str:
         "id": usuario["id"],
         "nombre": usuario["nombre"],
         "rol": usuario["rol"],
-        "exp": datetime.utcnow() + timedelta(hours=8)
+        "exp": datetime.utcnow() + timedelta(hours=8),
     }
 
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
@@ -24,11 +23,7 @@ def crear_token(usuario: dict) -> str:
 
 def verificar_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        payload = jwt.decode(
-            credentials.credentials,
-            SECRET_KEY,
-            algorithms=["HS256"]
-        )
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
         return payload
 
     except jwt.ExpiredSignatureError:

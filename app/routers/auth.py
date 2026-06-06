@@ -9,7 +9,6 @@ from app.core.telegram import enviar_telegram
 from app.core.time import hora_mexico
 from app.schemas.auth import LoginRequest
 
-
 router = APIRouter(tags=["Auth"])
 
 
@@ -43,7 +42,7 @@ def verificar_alertas_preñez():
         if hoy == dia_21:
             ya = fetch_one(
                 "SELECT id FROM notificaciones WHERE id_lote=%s AND tipo='verificar_preñez'",
-                (lote["id"],)
+                (lote["id"],),
             )
             if not ya:
                 enviar_telegram(
@@ -55,7 +54,7 @@ def verificar_alertas_preñez():
         if hoy == dia_107:
             ya = fetch_one(
                 "SELECT id FROM notificaciones WHERE id_lote=%s AND tipo='alerta_parto'",
-                (lote["id"],)
+                (lote["id"],),
             )
             if not ya:
                 enviar_telegram(
@@ -68,8 +67,7 @@ def verificar_alertas_preñez():
 @router.post("/login")
 def login(data: LoginRequest):
     usuario = fetch_one(
-        "SELECT * FROM usuarios WHERE pin = %s AND activo = 1",
-        (data.pin,)
+        "SELECT * FROM usuarios WHERE pin = %s AND activo = 1", (data.pin,)
     )
 
     if not usuario:
@@ -120,7 +118,7 @@ def login(data: LoginRequest):
 
     execute(
         "UPDATE usuarios SET ultimo_acceso = %s WHERE id = %s",
-        (hora_mexico(), usuario["id"])
+        (hora_mexico(), usuario["id"]),
     )
 
     return {

@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends
 from database import fetch_all
 from app.core.security import verificar_token
 
-
 router = APIRouter(tags=["Mapa"])
 
 

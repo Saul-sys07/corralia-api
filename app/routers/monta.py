@@ -9,7 +9,6 @@ from app.core.telegram import enviar_telegram
 from app.core.time import hora_mexico
 from app.schemas.monta import MontaRequest, VerificarPreñezRequest
 
-
 router = APIRouter(tags=["Monta"])
 
 
@@ -31,26 +30,32 @@ def registrar_monta(data: MontaRequest, usuario=Depends(verificar_token)):
 
         foto_url = resultado["secure_url"]
 
-    execute("""
+    execute(
+        """
         UPDATE lotes SET
             estado_pie_cria = 'Montada',
             fecha_monta = %s,
             fecha_parto_estimada = %s,
             foto_pie_cria = %s
         WHERE id = %s
-    """, (
-        fecha_monta,
-        fecha_parto,
-        foto_url,
-        data.lote_id,
-    ))
+    """,
+        (
+            fecha_monta,
+            fecha_parto,
+            foto_url,
+            data.lote_id,
+        ),
+    )
 
-    lote = fetch_one("""
+    lote = fetch_one(
+        """
         SELECT c.nombre AS corral
         FROM lotes l
         JOIN chiqueros c ON c.id = l.id_chiquero
         WHERE l.id = %s
-    """, (data.lote_id,))
+    """,
+        (data.lote_id,),
+    )
 
     enviar_telegram(
         f"🐷 MONTA REGISTRADA\n"
@@ -65,21 +70,21 @@ def registrar_monta(data: MontaRequest, usuario=Depends(verificar_token)):
 
 
 @router.post("/monta/verificar")
-def verificar_preñez(
-    data: VerificarPreñezRequest,
-    usuario=Depends(verificar_token)
-):
-    lote = fetch_one("""
+def verificar_preñez(data: VerificarPreñezRequest, usuario=Depends(verificar_token)):
+    lote = fetch_one(
+        """
         SELECT l.*, c.nombre AS corral
         FROM lotes l
         JOIN chiqueros c ON c.id = l.id_chiquero
         WHERE l.id = %s
-    """, (data.lote_id,))
+    """,
+        (data.lote_id,),
+    )
 
     if data.confirma_preñez:
         execute(
             "UPDATE lotes SET estado_pie_cria = 'Gestante' WHERE id = %s",
-            (data.lote_id,)
+            (data.lote_id,),
         )
 
         enviar_telegram(
@@ -91,13 +96,16 @@ def verificar_preñez(
         )
 
     else:
-        execute("""
+        execute(
+            """
             UPDATE lotes SET
                 estado_pie_cria = 'Disponible',
                 fecha_monta = NULL,
                 fecha_parto_estimada = NULL
             WHERE id = %s
-        """, (data.lote_id,))
+        """,
+            (data.lote_id,),
+        )
 
         enviar_telegram(
             f"❌ REGRESÓ A CALOR\n"

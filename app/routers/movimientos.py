@@ -11,31 +11,30 @@ from app.schemas.movimientos import (
     PartoRequest,
 )
 
-
 router = APIRouter(tags=["Movimientos"])
 
 
 @router.post("/muerte")
 def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
     if data.cantidad <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="La cantidad debe ser mayor a 0"
-        )
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0")
 
-    lote = fetch_one("""
+    lote = fetch_one(
+        """
         SELECT id, poblacion_actual
         FROM lotes
         WHERE id_chiquero = %s
         AND tipo_animal = %s
         AND poblacion_actual > 0
         LIMIT 1
-    """, (data.id_chiquero, data.tipo_animal))
+    """,
+        (data.id_chiquero, data.tipo_animal),
+    )
 
     if not lote:
         raise HTTPException(
             status_code=400,
-            detail=f"No hay {data.tipo_animal} disponibles en ese corral"
+            detail=f"No hay {data.tipo_animal} disponibles en ese corral",
         )
 
     poblacion_actual = int(lote["poblacion_actual"])
@@ -46,32 +45,34 @@ def registrar_muerte(data: MuerteRequest, usuario=Depends(verificar_token)):
             detail=(
                 f"No hay suficientes {data.tipo_animal} para registrar la muerte. "
                 f"Disponibles: {poblacion_actual}, intento de muerte: {data.cantidad}"
-            )
+            ),
         )
 
     fecha = hora_mexico()
 
-    execute_transaction([
-    (
-        """UPDATE lotes
+    execute_transaction(
+        [
+            (
+                """UPDATE lotes
            SET poblacion_actual = poblacion_actual - %s
            WHERE id = %s""",
-        (data.cantidad, lote["id"])
-    ),
-    (
-        """INSERT INTO historial_movimientos
+                (data.cantidad, lote["id"]),
+            ),
+            (
+                """INSERT INTO historial_movimientos
            (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
            VALUES (%s, %s, %s, 'MUERTE', %s, %s, %s)""",
-        (
-            data.id_chiquero,
-            data.tipo_animal,
-            data.cantidad,
-            usuario["nombre"],
-            f"Causa: {data.causa}",
-            fecha,
-        )
+                (
+                    data.id_chiquero,
+                    data.tipo_animal,
+                    data.cantidad,
+                    usuario["nombre"],
+                    f"Causa: {data.causa}",
+                    fecha,
+                ),
+            ),
+        ]
     )
-])
 
     enviar_telegram(
         f"💀 MUERTE\n"
@@ -89,24 +90,24 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
     tipo_destino = data.nueva_etapa or data.tipo_animal
 
     if data.cantidad <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="La cantidad debe ser mayor a 0"
-        )
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0")
 
-    lote_origen = fetch_one("""
+    lote_origen = fetch_one(
+        """
         SELECT id, poblacion_actual
         FROM lotes
         WHERE id_chiquero = %s
         AND tipo_animal = %s
         AND poblacion_actual > 0
         LIMIT 1
-    """, (data.id_origen, data.tipo_animal))
+    """,
+        (data.id_origen, data.tipo_animal),
+    )
 
     if not lote_origen:
         raise HTTPException(
             status_code=400,
-            detail=f"No hay {data.tipo_animal} disponibles en el corral origen"
+            detail=f"No hay {data.tipo_animal} disponibles en el corral origen",
         )
 
     poblacion_origen = int(lote_origen["poblacion_actual"])
@@ -117,58 +118,60 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
             detail=(
                 f"No hay suficientes {data.tipo_animal} en el corral origen. "
                 f"Disponibles: {poblacion_origen}, intento de traslado: {data.cantidad}"
-            )
+            ),
         )
 
     fecha = hora_mexico()
 
-    execute_transaction([
-    (
-        """UPDATE lotes
+    execute_transaction(
+        [
+            (
+                """UPDATE lotes
            SET poblacion_actual = poblacion_actual - %s
            WHERE id = %s""",
-        (data.cantidad, lote_origen["id"])
-    ),
-    (
-        """INSERT INTO lotes
+                (data.cantidad, lote_origen["id"]),
+            ),
+            (
+                """INSERT INTO lotes
            (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada, estado_pie_cria)
            VALUES (%s, %s, %s, %s, IF(%s = 'Pie de Cría', 'Disponible', NULL))
            ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-        (
-            data.id_destino,
-            tipo_destino,
-            data.cantidad,
-            fecha,
-            tipo_destino,
-        )
-    ),
-    (
-        """INSERT INTO historial_movimientos
+                (
+                    data.id_destino,
+                    tipo_destino,
+                    data.cantidad,
+                    fecha,
+                    tipo_destino,
+                ),
+            ),
+            (
+                """INSERT INTO historial_movimientos
            (id_chiquero_origen, id_chiquero_destino, tipo_animal, cantidad,
             tipo_evento, id_usuario, notas, fecha)
            VALUES (%s, %s, %s, %s, 'TRASPASO', %s, %s, %s)""",
-        (
-            data.id_origen,
-            data.id_destino,
-            data.tipo_animal,
-            data.cantidad,
-            usuario["nombre"],
-            f"Avance de etapa: {data.tipo_animal} → {tipo_destino}"
-            if data.nueva_etapa
-            else f"Traspaso de {data.cantidad} {data.tipo_animal}",
-            fecha,
-        )
+                (
+                    data.id_origen,
+                    data.id_destino,
+                    data.tipo_animal,
+                    data.cantidad,
+                    usuario["nombre"],
+                    (
+                        f"Avance de etapa: {data.tipo_animal} → {tipo_destino}"
+                        if data.nueva_etapa
+                        else f"Traspaso de {data.cantidad} {data.tipo_animal}"
+                    ),
+                    fecha,
+                ),
+            ),
+        ]
     )
-])
 
     corral_origen = fetch_one(
-        "SELECT nombre, zona FROM chiqueros WHERE id = %s",
-        (data.id_origen,)
+        "SELECT nombre, zona FROM chiqueros WHERE id = %s", (data.id_origen,)
     )
 
     corral_destino = fetch_one(
-        "SELECT nombre, zona FROM chiqueros WHERE id = %s",
-        (data.id_destino,)
+        "SELECT nombre, zona FROM chiqueros WHERE id = %s", (data.id_destino,)
     )
 
     enviar_telegram(
@@ -185,11 +188,10 @@ def registrar_traslado(data: TrasladoRequest, usuario=Depends(verificar_token)):
 
 @router.get("/corrales-destino")
 def get_corrales_destino(
-    tipo_animal: str,
-    excluir_id: int,
-    usuario=Depends(verificar_token)
+    tipo_animal: str, excluir_id: int, usuario=Depends(verificar_token)
 ):
-    return fetch_all("""
+    return fetch_all(
+        """
         SELECT c.id, c.nombre, c.zona, c.tipo, c.capacidad_max,
                IFNULL(SUM(l.poblacion_actual), 0) AS poblacion_actual
         FROM chiqueros c
@@ -197,30 +199,32 @@ def get_corrales_destino(
         WHERE c.id != %s
         GROUP BY c.id
         ORDER BY c.zona, CAST(REGEXP_SUBSTR(c.nombre, '[0-9]+') AS UNSIGNED), c.nombre
-    """, (excluir_id,))
+    """,
+        (excluir_id,),
+    )
 
 
 @router.post("/etapa")
 def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
     if data.cantidad <= 0:
-        raise HTTPException(
-            status_code=400,
-            detail="La cantidad debe ser mayor a 0"
-        )
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0")
 
-    lote_origen = fetch_one("""
+    lote_origen = fetch_one(
+        """
         SELECT id, poblacion_actual
         FROM lotes
         WHERE id_chiquero = %s
         AND tipo_animal = %s
         AND poblacion_actual > 0
         LIMIT 1
-    """, (data.id_chiquero, data.tipo_animal))
+    """,
+        (data.id_chiquero, data.tipo_animal),
+    )
 
     if not lote_origen:
         raise HTTPException(
             status_code=400,
-            detail=f"No hay {data.tipo_animal} disponibles en ese corral"
+            detail=f"No hay {data.tipo_animal} disponibles en ese corral",
         )
 
     poblacion_origen = int(lote_origen["poblacion_actual"])
@@ -231,43 +235,45 @@ def cambiar_etapa(data: EtapaRequest, usuario=Depends(verificar_token)):
             detail=(
                 f"No hay suficientes {data.tipo_animal} para cambiar de etapa. "
                 f"Disponibles: {poblacion_origen}, intento de cambio: {data.cantidad}"
-            )
+            ),
         )
 
     fecha = hora_mexico()
 
-    execute_transaction([
-    (
-        """UPDATE lotes
+    execute_transaction(
+        [
+            (
+                """UPDATE lotes
            SET poblacion_actual = poblacion_actual - %s
            WHERE id = %s""",
-        (data.cantidad, lote_origen["id"])
-    ),
-    (
-        """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
+                (data.cantidad, lote_origen["id"]),
+            ),
+            (
+                """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual, fecha_entrada)
            VALUES (%s, %s, %s, %s)
            ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-        (
-            data.id_chiquero,
-            data.nueva_etapa,
-            data.cantidad,
-            fecha,
-        )
-    ),
-    (
-        """INSERT INTO historial_movimientos
+                (
+                    data.id_chiquero,
+                    data.nueva_etapa,
+                    data.cantidad,
+                    fecha,
+                ),
+            ),
+            (
+                """INSERT INTO historial_movimientos
            (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
            VALUES (%s, %s, %s, 'CAMBIO_ESTADO', %s, %s, %s)""",
-        (
-            data.id_chiquero,
-            data.nueva_etapa,
-            data.cantidad,
-            usuario["nombre"],
-            f"Cambio de etapa: {data.tipo_animal} → {data.nueva_etapa} sin traspaso fisico",
-            fecha,
-        )
+                (
+                    data.id_chiquero,
+                    data.nueva_etapa,
+                    data.cantidad,
+                    usuario["nombre"],
+                    f"Cambio de etapa: {data.tipo_animal} → {data.nueva_etapa} sin traspaso fisico",
+                    fecha,
+                ),
+            ),
+        ]
     )
-])
 
     return {"ok": True}
 
@@ -279,7 +285,7 @@ def registrar_parto(data: PartoRequest, usuario=Depends(verificar_token)):
             """INSERT INTO lotes (id_chiquero, tipo_animal, poblacion_actual)
                VALUES (%s, 'Crías', %s)
                ON DUPLICATE KEY UPDATE poblacion_actual = poblacion_actual + VALUES(poblacion_actual)""",
-            (data.id_chiquero, data.crias_vivas)
+            (data.id_chiquero, data.crias_vivas),
         )
 
         execute(
@@ -292,7 +298,7 @@ def registrar_parto(data: PartoRequest, usuario=Depends(verificar_token)):
                 usuario["nombre"],
                 f"Parto: {data.crias_vivas} crías vivas",
                 hora_mexico(),
-            )
+            ),
         )
 
     if data.no_logradas > 0:
@@ -306,13 +312,13 @@ def registrar_parto(data: PartoRequest, usuario=Depends(verificar_token)):
                 usuario["nombre"],
                 f"Parto: {data.no_logradas} no logradas",
                 hora_mexico(),
-            )
+            ),
         )
 
     execute(
         """UPDATE lotes SET estado_pie_cria = 'Parida'
            WHERE id_chiquero = %s AND tipo_animal = 'Pie de Cría'""",
-        (data.id_chiquero,)
+        (data.id_chiquero,),
     )
 
     enviar_telegram(

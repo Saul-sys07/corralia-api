@@ -7,7 +7,6 @@ from app.core.security import verificar_token
 from app.core.time import hora_mexico
 from app.schemas.checador import FotoChecadorRequest
 
-
 router = APIRouter(tags=["Checador"])
 
 
@@ -15,24 +14,30 @@ router = APIRouter(tags=["Checador"])
 def get_estado_checador(usuario=Depends(verificar_token)):
     hoy = hora_mexico().date()
 
-    entrada = fetch_one("""
+    entrada = fetch_one(
+        """
         SELECT id, fecha_entrada
         FROM asistencia
         WHERE usuario_id = %s
         AND DATE(fecha_entrada) = %s
         ORDER BY fecha_entrada DESC
         LIMIT 1
-    """, (usuario["id"], hoy))
+    """,
+        (usuario["id"], hoy),
+    )
 
     salida = None
 
     if entrada:
-        salida = fetch_one("""
+        salida = fetch_one(
+            """
             SELECT fecha_salida
             FROM asistencia
             WHERE id = %s
             AND fecha_salida IS NOT NULL
-        """, (entrada["id"],))
+        """,
+            (entrada["id"],),
+        )
 
     return {
         "checo_entrada": entrada is not None,
@@ -50,7 +55,7 @@ def registrar_entrada(usuario=Depends(verificar_token)):
             usuario["id"],
             usuario["nombre"],
             hora_mexico(),
-        )
+        ),
     )
 
     return {"ok": True}
@@ -69,7 +74,7 @@ def registrar_salida(usuario=Depends(verificar_token)):
             hora_mexico(),
             usuario["id"],
             hoy,
-        )
+        ),
     )
 
     return {"ok": True}
@@ -88,10 +93,7 @@ def get_historial_asistencias(usuario=Depends(verificar_token)):
 
 
 @router.post("/checador/foto")
-def subir_foto_checador(
-    data: FotoChecadorRequest,
-    usuario=Depends(verificar_token)
-):
+def subir_foto_checador(data: FotoChecadorRequest, usuario=Depends(verificar_token)):
     hoy = hora_mexico().date()
 
     nombre_foto = f"corralia/checador/{usuario['nombre']}_{data.tipo}_{hoy}"
@@ -113,7 +115,7 @@ def subir_foto_checador(
                 url,
                 usuario["id"],
                 hoy,
-            )
+            ),
         )
     else:
         execute(
@@ -124,7 +126,7 @@ def subir_foto_checador(
                 url,
                 usuario["id"],
                 hoy,
-            )
+            ),
         )
 
     return {"ok": True, "url": url}

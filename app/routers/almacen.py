@@ -14,7 +14,6 @@ from app.schemas.almacen import (
     SalidaAlimentoRequest,
 )
 
-
 router = APIRouter(tags=["Almacén"])
 
 
@@ -48,9 +47,15 @@ def get_inventario(usuario=Depends(verificar_token)):
 
 @router.get("/almacen/saldo")
 def get_saldo(usuario=Depends(verificar_token)):
-    dep = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito'")
-    sue = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo'")
-    alm = fetch_one("SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL")
+    dep = fetch_one(
+        "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito'"
+    )
+    sue = fetch_one(
+        "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo'"
+    )
+    alm = fetch_one(
+        "SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL"
+    )
     ven = fetch_one("SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas")
 
     saldo = float(dep["t"]) + float(ven["t"]) - float(sue["t"]) - float(alm["t"])
@@ -76,7 +81,7 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
                 f"Compra — descuento: ${data.descuento:.2f}",
                 usuario["nombre"],
                 fecha,
-            )
+            ),
         )
 
     total = sum(i.costo for i in data.items)
@@ -99,7 +104,7 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
                 "Descuento aplicado a compra",
                 usuario["nombre"],
                 fecha,
-            )
+            ),
         )
 
     return {"ok": True}
@@ -109,12 +114,7 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
 def hacer_revoltura(data: RevolturaRequest, usuario=Depends(verificar_token)):
     fecha = hora_mexico()
 
-    kg_revoltura = (
-        (data.maiz * 40)
-        + (data.salvado * 25)
-        + (data.soya * 40)
-        + data.sal
-    )
+    kg_revoltura = (data.maiz * 40) + (data.salvado * 25) + (data.soya * 40) + data.sal
 
     notas = (
         f"Revoltura: {data.maiz:.0f}bt maíz + "
@@ -145,7 +145,7 @@ def hacer_revoltura(data: RevolturaRequest, usuario=Depends(verificar_token)):
                     notas,
                     usuario["nombre"],
                     fecha,
-                )
+                ),
             )
 
     execute(
@@ -157,7 +157,7 @@ def hacer_revoltura(data: RevolturaRequest, usuario=Depends(verificar_token)):
             notas,
             usuario["nombre"],
             fecha,
-        )
+        ),
     )
 
     return {"ok": True, "kg_revoltura": kg_revoltura}
@@ -174,7 +174,7 @@ def subir_foto_ticket(data: FotoTicketRequest, usuario=Depends(verificar_token))
     resultado = cloudinary.uploader.upload(
         f"data:image/jpeg;base64,{data.foto_base64}",
         public_id=nombre_foto,
-        overwrite=False
+        overwrite=False,
     )
 
     url = resultado["secure_url"]
@@ -187,7 +187,7 @@ def subir_foto_ticket(data: FotoTicketRequest, usuario=Depends(verificar_token))
             url,
             usuario["nombre"],
             hora_mexico(),
-        )
+        ),
     )
 
     return {"ok": True, "url": url}
@@ -232,7 +232,7 @@ def guardar_racion(data: RacionRequest, usuario=Depends(verificar_token)):
             data.cantidad,
             data.unidad,
             hora_mexico(),
-        )
+        ),
     )
 
     return {"ok": True}
@@ -240,8 +240,7 @@ def guardar_racion(data: RacionRequest, usuario=Depends(verificar_token)):
 
 @router.post("/almacen/salida-alimento")
 def registrar_salida_alimento(
-    data: SalidaAlimentoRequest,
-    usuario=Depends(verificar_token)
+    data: SalidaAlimentoRequest, usuario=Depends(verificar_token)
 ):
     execute(
         """INSERT INTO almacen
@@ -254,7 +253,7 @@ def registrar_salida_alimento(
             f"Alimentación {data.turno} — corral {data.id_chiquero}",
             usuario["nombre"],
             hora_mexico(),
-        )
+        ),
     )
 
     return {"ok": True}
@@ -264,14 +263,17 @@ def registrar_salida_alimento(
 def get_alimento_hoy(usuario=Depends(verificar_token)):
     hoy = hora_mexico().date()
 
-    return fetch_all("""
+    return fetch_all(
+        """
         SELECT notas, COUNT(*) as turnos
         FROM almacen
         WHERE tipo = 'salida'
         AND categoria = 'Alimento'
         AND DATE(fecha) = %s
         GROUP BY notas
-    """, (hoy,))
+    """,
+        (hoy,),
+    )
 
 
 @router.get("/almacen/gastos")

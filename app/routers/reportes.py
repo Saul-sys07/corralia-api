@@ -6,7 +6,6 @@ from database import fetch_one, fetch_all
 from app.core.security import verificar_token
 from app.core.time import hora_mexico
 
-
 router = APIRouter(tags=["Reportes"])
 
 
@@ -20,72 +19,96 @@ def get_reporte_mensual(mes: int, anio: int, usuario=Depends(verificar_token)):
         ORDER BY l.tipo_animal
     """)
 
-    movimientos = fetch_all("""
+    movimientos = fetch_all(
+        """
         SELECT tipo_evento, SUM(cantidad) AS total
         FROM historial_movimientos
         WHERE MONTH(fecha) = %s
         AND YEAR(fecha) = %s
         GROUP BY tipo_evento
-    """, (mes, anio))
+    """,
+        (mes, anio),
+    )
 
-    dep = fetch_one("""
+    dep = fetch_one(
+        """
         SELECT IFNULL(SUM(monto),0) AS t
         FROM finanzas
         WHERE tipo='deposito'
         AND MONTH(fecha)=%s
         AND YEAR(fecha)=%s
-    """, (mes, anio))
+    """,
+        (mes, anio),
+    )
 
-    ven = fetch_one("""
+    ven = fetch_one(
+        """
         SELECT IFNULL(SUM(total_rancho),0) AS t
         FROM ventas
         WHERE MONTH(fecha)=%s
         AND YEAR(fecha)=%s
-    """, (mes, anio))
+    """,
+        (mes, anio),
+    )
 
-    alm = fetch_one("""
+    alm = fetch_one(
+        """
         SELECT IFNULL(SUM(costo),0) AS t
         FROM almacen
         WHERE tipo='entrada'
         AND costo IS NOT NULL
         AND MONTH(fecha)=%s
         AND YEAR(fecha)=%s
-    """, (mes, anio))
+    """,
+        (mes, anio),
+    )
 
-    sue = fetch_one("""
+    sue = fetch_one(
+        """
         SELECT IFNULL(SUM(monto),0) AS t
         FROM finanzas
         WHERE tipo='sueldo'
         AND MONTH(fecha)=%s
         AND YEAR(fecha)=%s
-    """, (mes, anio))
+    """,
+        (mes, anio),
+    )
 
     mes_ant = mes - 1 if mes > 1 else 12
     anio_ant = anio if mes > 1 else anio - 1
 
-    ven_ant = fetch_one("""
+    ven_ant = fetch_one(
+        """
         SELECT IFNULL(SUM(total_rancho),0) AS t
         FROM ventas
         WHERE MONTH(fecha)=%s
         AND YEAR(fecha)=%s
-    """, (mes_ant, anio_ant))
+    """,
+        (mes_ant, anio_ant),
+    )
 
-    alm_ant = fetch_one("""
+    alm_ant = fetch_one(
+        """
         SELECT IFNULL(SUM(costo),0) AS t
         FROM almacen
         WHERE tipo='entrada'
         AND costo IS NOT NULL
         AND MONTH(fecha)=%s
         AND YEAR(fecha)=%s
-    """, (mes_ant, anio_ant))
+    """,
+        (mes_ant, anio_ant),
+    )
 
-    muertes_ant = fetch_one("""
+    muertes_ant = fetch_one(
+        """
         SELECT IFNULL(SUM(cantidad),0) AS t
         FROM historial_movimientos
         WHERE tipo_evento='MUERTE'
         AND MONTH(fecha)=%s
         AND YEAR(fecha)=%s
-    """, (mes_ant, anio_ant))
+    """,
+        (mes_ant, anio_ant),
+    )
 
     total_ven = float(ven["t"])
     total_alm = float(alm["t"])
@@ -94,10 +117,7 @@ def get_reporte_mensual(mes: int, anio: int, usuario=Depends(verificar_token)):
 
     return {
         "inventario": inventario,
-        "movimientos": {
-            m["tipo_evento"]: int(m["total"])
-            for m in movimientos
-        },
+        "movimientos": {m["tipo_evento"]: int(m["total"]) for m in movimientos},
         "finanzas": {
             "depositos": total_dep,
             "ventas": total_ven,
@@ -116,9 +136,7 @@ def get_reporte_mensual(mes: int, anio: int, usuario=Depends(verificar_token)):
 
 @router.get("/reportes/ica")
 def get_ica(
-    fecha_inicio: str = None,
-    fecha_fin: str = None,
-    usuario=Depends(verificar_token)
+    fecha_inicio: str = None, fecha_fin: str = None, usuario=Depends(verificar_token)
 ):
     hoy = hora_mexico().date()
 
@@ -128,13 +146,10 @@ def get_ica(
         else hoy - timedelta(days=30)
     )
 
-    ff = (
-        datetime.strptime(fecha_fin, "%Y-%m-%d").date()
-        if fecha_fin
-        else hoy
-    )
+    ff = datetime.strptime(fecha_fin, "%Y-%m-%d").date() if fecha_fin else hoy
 
-    alimento = fetch_all("""
+    alimento = fetch_all(
+        """
         SELECT c.nombre AS corral, c.zona, SUM(a.cantidad) AS kg_alimento
         FROM almacen a
         LEFT JOIN chiqueros c ON c.id = CAST(
@@ -146,9 +161,12 @@ def get_ica(
         AND c.zona = 'Crecimiento'
         AND c.nombre IS NOT NULL
         GROUP BY c.nombre, c.zona
-    """, (fi, ff))
+    """,
+        (fi, ff),
+    )
 
-    ventas = fetch_all("""
+    ventas = fetch_all(
+        """
         SELECT c.nombre AS corral,
                SUM(v.peso_kg) AS kg_vendidos,
                COUNT(v.id) AS num_ventas
@@ -160,13 +178,12 @@ def get_ica(
         WHERE DATE(v.fecha) BETWEEN %s AND %s
         AND c.zona = 'Crecimiento'
         GROUP BY c.nombre
-    """, (fi, ff))
+    """,
+        (fi, ff),
+    )
 
     ventas_dict = {
-        v["corral"]: {
-            "kg": float(v["kg_vendidos"]),
-            "num": int(v["num_ventas"])
-        }
+        v["corral"]: {"kg": float(v["kg_vendidos"]), "num": int(v["num_ventas"])}
         for v in ventas
     }
 
@@ -181,15 +198,17 @@ def get_ica(
 
         ica = round(kg_alimento / kg_vendidos, 2) if kg_vendidos > 0 else None
 
-        resultado.append({
-            "corral": corral,
-            "zona": a["zona"],
-            "kg_alimento": kg_alimento,
-            "kg_vendidos": kg_vendidos,
-            "num_ventas": venta["num"],
-            "ica": ica,
-            "fecha_inicio": str(fi),
-            "fecha_fin": str(ff),
-        })
+        resultado.append(
+            {
+                "corral": corral,
+                "zona": a["zona"],
+                "kg_alimento": kg_alimento,
+                "kg_vendidos": kg_vendidos,
+                "num_ventas": venta["num"],
+                "ica": ica,
+                "fecha_inicio": str(fi),
+                "fecha_fin": str(ff),
+            }
+        )
 
     return resultado

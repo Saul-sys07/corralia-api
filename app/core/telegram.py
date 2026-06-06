@@ -12,7 +12,7 @@ def enviar_telegram(mensaje: str):
         req.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje},
-            timeout=5
+            timeout=5,
         )
     except Exception:
         pass

@@ -11,16 +11,21 @@ from app.schemas.finanzas import (
     SueldoConfig,
 )
 
-
 router = APIRouter(tags=["Finanzas"])
 
 
 @router.get("/finanzas/resumen")
 def get_resumen_finanzas(usuario=Depends(verificar_token)):
-    dep = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito'")
-    sue = fetch_one("SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo'")
+    dep = fetch_one(
+        "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito'"
+    )
+    sue = fetch_one(
+        "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo'"
+    )
     ven = fetch_one("SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas")
-    alm = fetch_one("SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL")
+    alm = fetch_one(
+        "SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL"
+    )
 
     total_dep = float(dep["t"])
     total_sue = float(sue["t"])
@@ -59,7 +64,8 @@ def get_nomina(usuario=Depends(verificar_token)):
     domingo_inicio = hoy - timedelta(days=dias_desde_domingo)
     domingo_fin = domingo_inicio + timedelta(days=6)
 
-    return fetch_all("""
+    return fetch_all(
+        """
         SELECT u.id, u.nombre, u.sueldo_diario,
                COUNT(DISTINCT DATE(a.fecha_entrada)) AS dias_trabajados
         FROM usuarios u
@@ -69,7 +75,9 @@ def get_nomina(usuario=Depends(verificar_token)):
         AND u.rol != 'admin'
         GROUP BY u.id
         ORDER BY u.nombre
-    """, (domingo_inicio, domingo_fin))
+    """,
+        (domingo_inicio, domingo_fin),
+    )
 
 
 @router.post("/finanzas/deposito")
@@ -82,7 +90,7 @@ def registrar_deposito(data: DepositoRequest, usuario=Depends(verificar_token)):
             data.notas,
             usuario["nombre"],
             hora_mexico(),
-        )
+        ),
     )
 
     return {"ok": True}
@@ -103,7 +111,7 @@ def registrar_nomina(data: NominaRequest, usuario=Depends(verificar_token)):
                     f"{item.dias} días — semana {data.semana}",
                     usuario["nombre"],
                     fecha,
-                )
+                ),
             )
 
     return {"ok": True}
@@ -124,7 +132,7 @@ def get_sueldos(usuario=Depends(verificar_token)):
 def actualizar_sueldo(data: SueldoConfig, usuario=Depends(verificar_token)):
     execute(
         "UPDATE usuarios SET sueldo_diario = %s WHERE id = %s",
-        (data.sueldo_diario, data.usuario_id)
+        (data.sueldo_diario, data.usuario_id),
     )
 
     return {"ok": True}
@@ -149,22 +157,22 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
 
     dep_ant = fetch_one(
         "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND DATE(fecha) < %s",
-        (domingo_inicio,)
+        (domingo_inicio,),
     )
 
     ven_ant = fetch_one(
         "SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas WHERE DATE(fecha) < %s",
-        (domingo_inicio,)
+        (domingo_inicio,),
     )
 
     nom_ant = fetch_one(
         "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo' AND DATE(fecha) < %s",
-        (domingo_inicio,)
+        (domingo_inicio,),
     )
 
     gas_ant = fetch_one(
         "SELECT IFNULL(SUM(costo),0) AS t FROM almacen WHERE tipo='entrada' AND costo IS NOT NULL AND DATE(fecha) < %s",
-        (domingo_inicio,)
+        (domingo_inicio,),
     )
 
     sobrante_anterior = (
@@ -176,41 +184,54 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
 
     sobrante_anterior = max(sobrante_anterior, 0)
 
-    depositos = fetch_all("""
+    depositos = fetch_all(
+        """
         SELECT monto, notas, fecha
         FROM finanzas
         WHERE tipo='deposito'
         AND DATE(fecha) BETWEEN %s AND %s
         ORDER BY fecha DESC
-    """, (lunes, domingo))
+    """,
+        (lunes, domingo),
+    )
 
-    ventas = fetch_all("""
+    ventas = fetch_all(
+        """
         SELECT v.total_rancho, v.tipo_animal, v.cantidad, v.fecha,
                c.nombre AS cliente
         FROM ventas v
         JOIN clientes c ON c.id = v.cliente_id
         WHERE DATE(v.fecha) BETWEEN %s AND %s
         ORDER BY v.fecha DESC
-    """, (lunes, domingo))
+    """,
+        (lunes, domingo),
+    )
 
-    nomina = fetch_all("""
+    nomina = fetch_all(
+        """
         SELECT concepto, monto, notas, fecha
         FROM finanzas
         WHERE tipo='sueldo'
         AND DATE(fecha) BETWEEN %s AND %s
         ORDER BY fecha DESC
-    """, (lunes, domingo))
+    """,
+        (lunes, domingo),
+    )
 
-    alimento = fetch_one("""
+    alimento = fetch_one(
+        """
         SELECT IFNULL(SUM(cantidad), 0) AS total_kg,
                COUNT(*) AS num_registros
         FROM almacen
         WHERE tipo='salida'
         AND categoria='Alimento'
         AND DATE(fecha) BETWEEN %s AND %s
-    """, (lunes, domingo))
+    """,
+        (lunes, domingo),
+    )
 
-    gastos_otros = fetch_all("""
+    gastos_otros = fetch_all(
+        """
         SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
         FROM almacen
         WHERE tipo='entrada'
@@ -225,16 +246,21 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
             OR producto LIKE 'Otro:%'
         )
         ORDER BY fecha DESC
-    """, (lunes, domingo))
+    """,
+        (lunes, domingo),
+    )
 
-    compras_alimento = fetch_all("""
+    compras_alimento = fetch_all(
+        """
         SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
         FROM almacen
         WHERE tipo='entrada'
         AND DATE(fecha) BETWEEN %s AND %s
         AND categoria IN ('Ingredientes revoltura', 'Pellet', 'Descuento')
         ORDER BY fecha DESC
-    """, (lunes, domingo))
+    """,
+        (lunes, domingo),
+    )
 
     total_depositos = sum(float(d["monto"]) for d in depositos)
     total_ventas = sum(float(v["total_rancho"]) for v in ventas)

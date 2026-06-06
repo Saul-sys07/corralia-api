@@ -14,7 +14,6 @@ from app.schemas.configuracion import (
     NuclearRequest,
 )
 
-
 router = APIRouter(tags=["Configuración"])
 
 
@@ -30,7 +29,7 @@ def actualizar_precio(precio: float, usuario=Depends(verificar_token)):
         """INSERT INTO configuracion (clave, valor)
            VALUES ('precio_kg', %s)
            ON DUPLICATE KEY UPDATE valor = %s""",
-        (str(precio), str(precio))
+        (str(precio), str(precio)),
     )
 
     return {"ok": True}
@@ -58,7 +57,7 @@ def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
             data.largo,
             data.ancho,
             data.capacidad_max,
-        )
+        ),
     )
 
     return {"ok": True}
@@ -66,9 +65,7 @@ def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
 
 @router.put("/configuracion/corrales/{corral_id}")
 def editar_corral(
-    corral_id: int,
-    data: CorralEditRequest,
-    usuario=Depends(verificar_token)
+    corral_id: int, data: CorralEditRequest, usuario=Depends(verificar_token)
 ):
     execute(
         """UPDATE chiqueros SET nombre=%s, tipo=%s, zona=%s,
@@ -82,7 +79,7 @@ def editar_corral(
             data.largo,
             data.ancho,
             corral_id,
-        )
+        ),
     )
 
     return {"ok": True}
@@ -102,10 +99,7 @@ def get_pie_de_cria(usuario=Depends(verificar_token)):
 
 
 @router.post("/configuracion/pie-de-cria")
-def actualizar_pie_de_cria(
-    data: PieCriaUpdate,
-    usuario=Depends(verificar_token)
-):
+def actualizar_pie_de_cria(data: PieCriaUpdate, usuario=Depends(verificar_token)):
     fecha_parto = None
     fecha_monta = None
 
@@ -122,7 +116,7 @@ def actualizar_pie_de_cria(
             fecha_monta,
             fecha_parto,
             data.lote_id,
-        )
+        ),
     )
 
     if data.fecha_monta:
@@ -147,7 +141,7 @@ def registrar_animales(data: AnimalRequest, usuario=Depends(verificar_token)):
             data.id_chiquero,
             data.tipo_animal,
             data.cantidad,
-        )
+        ),
     )
 
     execute(
@@ -161,7 +155,7 @@ def registrar_animales(data: AnimalRequest, usuario=Depends(verificar_token)):
             usuario["nombre"],
             f"Registro inicial: {data.cantidad} {data.tipo_animal}",
             hora_mexico(),
-        )
+        ),
     )
 
     return {"ok": True}

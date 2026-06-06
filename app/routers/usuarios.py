@@ -8,7 +8,6 @@ from app.schemas.usuarios import (
     ResetPinRequest,
 )
 
-
 router = APIRouter(tags=["Usuarios"])
 
 
@@ -23,15 +22,11 @@ def get_usuarios(usuario=Depends(verificar_token)):
 
 @router.post("/usuarios")
 def crear_usuario(data: UsuarioRequest, usuario=Depends(verificar_token)):
-    existente = fetch_one(
-        "SELECT id FROM usuarios WHERE nombre = %s",
-        (data.nombre,)
-    )
+    existente = fetch_one("SELECT id FROM usuarios WHERE nombre = %s", (data.nombre,))
 
     if existente:
         raise HTTPException(
-            status_code=400,
-            detail="Ya existe un usuario con ese nombre"
+            status_code=400, detail="Ya existe un usuario con ese nombre"
         )
 
     execute(
@@ -42,7 +37,7 @@ def crear_usuario(data: UsuarioRequest, usuario=Depends(verificar_token)):
             data.pin_temporal,
             data.pin_temporal,
             data.rol,
-        )
+        ),
     )
 
     return {"ok": True}
@@ -50,10 +45,7 @@ def crear_usuario(data: UsuarioRequest, usuario=Depends(verificar_token)):
 
 @router.post("/usuarios/toggle")
 def toggle_usuario(usuario_id: int, usuario=Depends(verificar_token)):
-    execute(
-        "UPDATE usuarios SET activo = NOT activo WHERE id = %s",
-        (usuario_id,)
-    )
+    execute("UPDATE usuarios SET activo = NOT activo WHERE id = %s", (usuario_id,))
 
     return {"ok": True}
 
@@ -65,14 +57,11 @@ def activar_usuario(data: ActivarRequest):
         (
             data.nuevo_pin,
             data.usuario_id,
-        )
+        ),
     )
 
     if existente:
-        raise HTTPException(
-            status_code=400,
-            detail="Ese PIN ya lo usa otra persona"
-        )
+        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
 
     execute(
         """UPDATE usuarios
@@ -81,7 +70,7 @@ def activar_usuario(data: ActivarRequest):
         (
             data.nuevo_pin,
             data.usuario_id,
-        )
+        ),
     )
 
     return {"ok": True}
@@ -94,14 +83,11 @@ def reset_pin(data: ResetPinRequest, usuario=Depends(verificar_token)):
         (
             data.nuevo_pin,
             data.usuario_id,
-        )
+        ),
     )
 
     if existente:
-        raise HTTPException(
-            status_code=400,
-            detail="Ese PIN ya lo usa otra persona"
-        )
+        raise HTTPException(status_code=400, detail="Ese PIN ya lo usa otra persona")
 
     execute(
         """UPDATE usuarios
@@ -111,7 +97,7 @@ def reset_pin(data: ResetPinRequest, usuario=Depends(verificar_token)):
             data.nuevo_pin,
             data.nuevo_pin,
             data.usuario_id,
-        )
+        ),
     )
 
     return {"ok": True}

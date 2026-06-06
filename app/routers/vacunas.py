@@ -5,7 +5,6 @@ from app.core.security import verificar_token
 from app.core.time import hora_mexico
 from app.schemas.vacunas import VacunaRequest
 
-
 router = APIRouter(tags=["Vacunas"])
 
 
@@ -36,7 +35,7 @@ def registrar_vacuna(data: VacunaRequest, usuario=Depends(verificar_token)):
             data.notas or None,
             usuario["nombre"],
             hora_mexico(),
-        )
+        ),
     )
 
     return {"ok": True}

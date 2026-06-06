@@ -6,7 +6,6 @@ from database import fetch_one, fetch_all, execute
 from app.core.security import verificar_token
 from app.schemas.clientes import ClienteRequest
 
-
 router = APIRouter(tags=["Clientes"])
 
 
@@ -39,19 +38,17 @@ def get_clientes_lista(usuario=Depends(verificar_token)):
 @router.post("/clientes")
 def crear_cliente(data: ClienteRequest, usuario=Depends(verificar_token)):
     existente = fetch_one(
-        "SELECT id FROM clientes WHERE telefono = %s",
-        (data.telefono,)
+        "SELECT id FROM clientes WHERE telefono = %s", (data.telefono,)
     )
 
     if existente:
         raise HTTPException(
-            status_code=400,
-            detail="Ya existe un cliente con ese teléfono"
+            status_code=400, detail="Ya existe un cliente con ese teléfono"
         )
 
     execute(
         "INSERT INTO clientes (nombre, telefono, tipo, usuario_id) VALUES (%s, %s, %s, %s)",
-        (data.nombre, data.telefono, data.tipo, data.usuario_id)
+        (data.nombre, data.telefono, data.tipo, data.usuario_id),
     )
 
     return {"ok": True}
@@ -61,10 +58,13 @@ def crear_cliente(data: ClienteRequest, usuario=Depends(verificar_token)):
 def actualizar_ciclo_clientes(usuario=Depends(verificar_token)):
     hace_un_anio = datetime.now() - timedelta(days=365)
 
-    execute("""
+    execute(
+        """
         UPDATE clientes SET tipo = 'Disponible'
         WHERE tipo = 'Retenido'
         AND (ultimo_pedido IS NULL OR ultimo_pedido < %s)
-    """, (hace_un_anio,))
+    """,
+        (hace_un_anio,),
+    )
 
     return {"ok": True}
