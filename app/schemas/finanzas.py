@@ -4,6 +4,8 @@ from pydantic import BaseModel
 class DepositoRequest(BaseModel):
     monto: float
     notas: str = ""
+    entrego: str = ""
+    metodo: str = ""
 
 
 class SueldoItem(BaseModel):

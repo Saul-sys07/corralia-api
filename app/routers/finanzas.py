@@ -17,7 +17,7 @@ router = APIRouter(tags=["Finanzas"])
 @router.get("/finanzas/resumen")
 def get_resumen_finanzas(usuario=Depends(verificar_token)):
     dep = fetch_one(
-        "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito'"
+    "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND estado='confirmado'"
     )
     sue = fetch_one(
         "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='sueldo'"
@@ -45,13 +45,92 @@ def get_resumen_finanzas(usuario=Depends(verificar_token)):
 @router.get("/finanzas/depositos")
 def get_depositos(usuario=Depends(verificar_token)):
     return fetch_all("""
-        SELECT fecha, monto, notas
+        SELECT id, fecha, monto, notas, usuario_id, entrego, metodo, estado
         FROM finanzas
         WHERE tipo='deposito'
+        AND estado='confirmado'
         ORDER BY fecha DESC
         LIMIT 10
     """)
 
+@router.get("/finanzas/depositos/pendientes")
+def get_depositos_pendientes(usuario=Depends(verificar_token)):
+    if usuario["rol"] != "admin":
+        return []
+
+    return fetch_all("""
+        SELECT id, fecha, monto, notas, usuario_id, entrego, metodo, estado
+        FROM finanzas
+        WHERE tipo='deposito'
+        AND estado='pendiente'
+        ORDER BY fecha DESC
+    """)
+
+@router.post("/finanzas/depositos/{deposito_id}/confirmar")
+def confirmar_deposito(deposito_id: int, usuario=Depends(verificar_token)):
+    if usuario["rol"] != "admin":
+        return {"ok": False, "mensaje": "No autorizado"}
+
+    execute(
+        """UPDATE finanzas
+           SET estado='confirmado',
+               confirmado_por=%s,
+               fecha_confirmacion=%s
+           WHERE id=%s
+           AND tipo='deposito'
+           AND estado='pendiente'""",
+        (
+            usuario["nombre"],
+            hora_mexico(),
+            deposito_id,
+        ),
+    )
+
+    return {"ok": True}
+
+@router.post("/finanzas/depositos/{deposito_id}/confirmar")
+def confirmar_deposito(deposito_id: int, usuario=Depends(verificar_token)):
+    if usuario["rol"] != "admin":
+        return {"ok": False, "mensaje": "No autorizado"}
+
+    execute(
+        """UPDATE finanzas
+           SET estado='confirmado',
+               confirmado_por=%s,
+               fecha_confirmacion=%s
+           WHERE id=%s
+           AND tipo='deposito'
+           AND estado='pendiente'""",
+        (
+            usuario["nombre"],
+            hora_mexico(),
+            deposito_id,
+        ),
+    )
+
+    return {"ok": True}
+
+@router.post("/finanzas/depositos/{deposito_id}/rechazar")
+def rechazar_deposito(deposito_id: int, usuario=Depends(verificar_token)):
+    if usuario["rol"] != "admin":
+        return {"ok": False, "mensaje": "No autorizado"}
+
+    execute(
+        """UPDATE finanzas
+           SET estado='rechazado',
+               confirmado_por=%s,
+               fecha_confirmacion=%s
+           WHERE id=%s
+           AND tipo='deposito'
+           AND estado='pendiente'""",
+        (
+            usuario["nombre"],
+            hora_mexico(),
+            deposito_id,
+        ),
+    )
+
+    return {"ok": True}
 
 @router.get("/finanzas/nomina")
 def get_nomina(usuario=Depends(verificar_token)):
@@ -82,18 +161,42 @@ def get_nomina(usuario=Depends(verificar_token)):
 
 @router.post("/finanzas/deposito")
 def registrar_deposito(data: DepositoRequest, usuario=Depends(verificar_token)):
+    es_admin = usuario["rol"] == "admin"
+
+    estado = "confirmado" if es_admin else "pendiente"
+    confirmado_por = usuario["nombre"] if es_admin else None
+    fecha_confirmacion = hora_mexico() if es_admin else None
+
+    concepto = "Depósito papá" if es_admin else "Dinero recibido pendiente"
+
     execute(
-        """INSERT INTO finanzas (tipo, concepto, monto, notas, usuario_id, fecha)
-           VALUES ('deposito', 'Depósito papá', %s, %s, %s, %s)""",
+        """INSERT INTO finanzas
+           (tipo, concepto, monto, notas, usuario_id, fecha,
+            estado, entrego, metodo, confirmado_por, fecha_confirmacion)
+           VALUES ('deposito', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
+            concepto,
             data.monto,
             data.notas,
             usuario["nombre"],
             hora_mexico(),
+            estado,
+            data.entrego,
+            data.metodo,
+            confirmado_por,
+            fecha_confirmacion,
         ),
     )
 
-    return {"ok": True}
+    return {
+        "ok": True,
+        "estado": estado,
+        "mensaje": (
+            "Depósito registrado y confirmado"
+            if es_admin
+            else "Dinero recibido registrado, pendiente de confirmación"
+        ),
+    }
 
 
 @router.post("/finanzas/nomina")
@@ -156,9 +259,9 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     domingo = domingo_fin
 
     dep_ant = fetch_one(
-        "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND DATE(fecha) < %s",
-        (domingo_inicio,),
-    )
+    "SELECT IFNULL(SUM(monto),0) AS t FROM finanzas WHERE tipo='deposito' AND estado='confirmado' AND DATE(fecha) < %s",
+    (domingo_inicio,),
+)
 
     ven_ant = fetch_one(
         "SELECT IFNULL(SUM(total_rancho),0) AS t FROM ventas WHERE DATE(fecha) < %s",
@@ -185,15 +288,16 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     sobrante_anterior = max(sobrante_anterior, 0)
 
     depositos = fetch_all(
-        """
-        SELECT monto, notas, fecha
-        FROM finanzas
-        WHERE tipo='deposito'
-        AND DATE(fecha) BETWEEN %s AND %s
-        ORDER BY fecha DESC
-    """,
-        (lunes, domingo),
-    )
+    """
+    SELECT monto, notas, fecha, usuario_id, entrego, metodo
+    FROM finanzas
+    WHERE tipo='deposito'
+    AND estado='confirmado'
+    AND DATE(fecha) BETWEEN %s AND %s
+    ORDER BY fecha DESC
+""",
+    (lunes, domingo),
+)
 
     ventas = fetch_all(
         """
