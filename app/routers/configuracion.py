@@ -12,6 +12,7 @@ from app.schemas.configuracion import (
     CorralRequest,
     CorralEditRequest,
     NuclearRequest,
+    SolicitudCorralRequest,
 )
 
 router = APIRouter(tags=["Configuración"])
@@ -47,16 +48,161 @@ def get_corrales(usuario=Depends(verificar_token)):
 
 @router.post("/configuracion/corrales")
 def crear_corral(data: CorralRequest, usuario=Depends(verificar_token)):
+    if usuario["rol"] not in ["admin", "encargado_general"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    es_admin = usuario["rol"] == "admin"
+
+    tipo = data.tipo or "Comunal"
+    capacidad = data.capacidad_max if data.capacidad_max is not None else 0
+    largo = data.largo if data.largo is not None else None
+    ancho = data.ancho if data.ancho is not None else None
+
+    if not data.nombre or not data.zona:
+        raise HTTPException(
+            status_code=400,
+            detail="Captura nombre y zona del corral"
+        )
+
+    if es_admin and capacidad <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Captura capacidad del corral"
+        )
+
     execute(
         """INSERT INTO chiqueros (nombre, tipo, zona, largo, ancho, capacidad_max)
            VALUES (%s, %s, %s, %s, %s, %s)""",
         (
             data.nombre,
-            data.tipo,
+            tipo,
             data.zona,
-            data.largo,
-            data.ancho,
-            data.capacidad_max,
+            largo,
+            ancho,
+            capacidad,
+        ),
+    )
+
+    return {"ok": True}
+
+@router.post("/configuracion/corrales/solicitudes")
+def solicitar_corral(data: SolicitudCorralRequest, usuario=Depends(verificar_token)):
+    if usuario["rol"] not in ["admin", "encargado_general"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    if not data.nombre or not data.zona:
+        raise HTTPException(
+            status_code=400,
+            detail="Captura nombre y zona del corral"
+        )
+
+    execute(
+        """INSERT INTO solicitudes_corrales
+           (nombre, zona, tipo, estado, usuario_id, fecha_solicitud, notas)
+           VALUES (%s, %s, %s, 'pendiente', %s, %s, %s)""",
+        (
+            data.nombre,
+            data.zona,
+            data.tipo or "Comunal",
+            usuario["nombre"],
+            hora_mexico(),
+            data.notas,
+        ),
+    )
+
+    return {
+        "ok": True,
+        "mensaje": "Solicitud enviada, pendiente de confirmación por admin"
+    }
+
+
+@router.get("/configuracion/corrales/solicitudes")
+def get_solicitudes_corrales(usuario=Depends(verificar_token)):
+    if usuario["rol"] != "admin":
+        return []
+
+    return fetch_all("""
+        SELECT id, nombre, zona, tipo, estado, usuario_id,
+               fecha_solicitud, notas
+        FROM solicitudes_corrales
+        WHERE estado = 'pendiente'
+        ORDER BY fecha_solicitud DESC
+    """)
+
+
+@router.post("/configuracion/corrales/solicitudes/{solicitud_id}/confirmar")
+def confirmar_solicitud_corral(
+    solicitud_id: int,
+    usuario=Depends(verificar_token),
+):
+    if usuario["rol"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede confirmar")
+
+    solicitud = fetch_one(
+        """
+        SELECT *
+        FROM solicitudes_corrales
+        WHERE id = %s
+        AND estado = 'pendiente'
+        LIMIT 1
+        """,
+        (solicitud_id,),
+    )
+
+    if not solicitud:
+        raise HTTPException(
+            status_code=404,
+            detail="Solicitud no encontrada o ya procesada"
+        )
+
+    corral_id = execute(
+        """INSERT INTO chiqueros
+           (nombre, tipo, zona, largo, ancho, capacidad_max)
+           VALUES (%s, %s, %s, NULL, NULL, 0)""",
+        (
+            solicitud["nombre"],
+            solicitud["tipo"] or "Comunal",
+            solicitud["zona"],
+        ),
+    )
+
+    execute(
+        """UPDATE solicitudes_corrales
+           SET estado = 'confirmado',
+               confirmado_por = %s,
+               fecha_confirmacion = %s,
+               corral_id = %s
+           WHERE id = %s""",
+        (
+            usuario["nombre"],
+            hora_mexico(),
+            corral_id,
+            solicitud_id,
+        ),
+    )
+
+    return {"ok": True, "mensaje": "Corral confirmado y creado"}
+
+
+@router.post("/configuracion/corrales/solicitudes/{solicitud_id}/rechazar")
+def rechazar_solicitud_corral(
+    solicitud_id: int,
+    usuario=Depends(verificar_token),
+):
+    if usuario["rol"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede rechazar")
+
+    execute(
+        """UPDATE solicitudes_corrales
+           SET estado = 'rechazado',
+               confirmado_por = %s,
+               fecha_confirmacion = %s
+           WHERE id = %s
+           AND estado = 'pendiente'""",
+        (
+            usuario["nombre"],
+            hora_mexico(),
+            solicitud_id,
         ),
     )
 

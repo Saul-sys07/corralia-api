@@ -15,11 +15,11 @@ class AnimalRequest(BaseModel):
 
 class CorralRequest(BaseModel):
     nombre: str
-    tipo: str
+    tipo: str = "Comunal"
     zona: str
     largo: float | None = None
     ancho: float | None = None
-    capacidad_max: int
+    capacidad_max: int | None = None
 
 
 class CorralEditRequest(BaseModel):
@@ -33,3 +33,10 @@ class CorralEditRequest(BaseModel):
 
 class NuclearRequest(BaseModel):
     confirmacion: str
+
+
+class SolicitudCorralRequest(BaseModel):
+    nombre: str
+    zona: str
+    tipo: str = "Comunal"
+    notas: str = ""
