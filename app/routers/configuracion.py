@@ -110,6 +110,17 @@ def solicitar_corral(data: SolicitudCorralRequest, usuario=Depends(verificar_tok
         ),
     )
 
+    enviar_telegram(
+        f"⏳ SOLICITUD DE NUEVO CORRAL\n"
+        f"👤 Solicitado por: {usuario['nombre']}\n"
+        f"🏠 Nombre: {data.nombre}\n"
+        f"📍 Zona: {data.zona}\n"
+        f"🏷️ Tipo: {data.tipo or 'Comunal'}\n"
+        f"📝 Notas: {data.notas or 'Sin notas'}\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}\n\n"
+        f"✅ Entra a Corralia → Corrales para confirmar o rechazar."
+    )
+
     return {
         "ok": True,
         "mensaje": "Solicitud enviada, pendiente de confirmación por admin"

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
+from app.core.telegram import enviar_telegram
 
 from database import fetch_one, fetch_all, execute
 from app.core.security import verificar_token
@@ -66,27 +67,6 @@ def get_depositos_pendientes(usuario=Depends(verificar_token)):
         ORDER BY fecha DESC
     """)
 
-@router.post("/finanzas/depositos/{deposito_id}/confirmar")
-def confirmar_deposito(deposito_id: int, usuario=Depends(verificar_token)):
-    if usuario["rol"] != "admin":
-        return {"ok": False, "mensaje": "No autorizado"}
-
-    execute(
-        """UPDATE finanzas
-           SET estado='confirmado',
-               confirmado_por=%s,
-               fecha_confirmacion=%s
-           WHERE id=%s
-           AND tipo='deposito'
-           AND estado='pendiente'""",
-        (
-            usuario["nombre"],
-            hora_mexico(),
-            deposito_id,
-        ),
-    )
-
-    return {"ok": True}
 
 @router.post("/finanzas/depositos/{deposito_id}/confirmar")
 def confirmar_deposito(deposito_id: int, usuario=Depends(verificar_token)):
@@ -187,6 +167,19 @@ def registrar_deposito(data: DepositoRequest, usuario=Depends(verificar_token)):
             fecha_confirmacion,
         ),
     )
+
+    if estado == "pendiente":
+        enviar_telegram(
+        f"⏳ DINERO RECIBIDO PENDIENTE\n"
+        f"👤 Registrado por: {usuario['nombre']}\n"
+        f"💵 Monto: ${data.monto:,.2f}\n"
+        f"🙋 Entregado por: {data.entrego or 'No especificado'}\n"
+        f"💳 Método: {data.metodo or 'No especificado'}\n"
+        f"📝 Notas: {data.notas or 'Sin notas'}\n"
+        f"🕐 {hora_mexico().strftime('%d/%m/%Y %H:%M')}\n\n"
+        f"✅ Entra a Corralia → Depósitos para confirmar o rechazar."
+    )
+    
 
     return {
         "ok": True,
