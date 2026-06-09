@@ -1,18 +1,31 @@
-# app/core/telegram.py
-
-import requests as req
-from app.core.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+import os
+import requests
 
 
 def enviar_telegram(mensaje: str):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
+    token = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+    if not token or not chat_id:
+        print("⚠️ Telegram no configurado: falta TOKEN o CHAT_ID")
+        return False
 
     try:
-        req.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": mensaje},
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": mensaje,
+            },
             timeout=5,
         )
-    except Exception:
-        pass
+
+        if response.status_code != 200:
+            print("⚠️ Error Telegram:", response.status_code, response.text)
+            return False
+
+        return True
+
+    except Exception as e:
+        print("⚠️ Excepción Telegram:", e)
+        return False
