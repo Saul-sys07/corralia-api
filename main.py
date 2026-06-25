@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.routers import reproductores
 import cloudinary
+
 
 from app.core.config import (
     CLOUDINARY_CLOUD_NAME,
@@ -58,6 +60,7 @@ app.include_router(notificaciones.router)
 app.include_router(monta.router)
 app.include_router(apartados.router)
 app.include_router(reportes.router)
+app.include_router(reproductores.router)
 
 
 @app.get("/")

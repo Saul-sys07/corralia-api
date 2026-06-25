@@ -21,6 +21,7 @@ RADIO_METROS = int(os.getenv("RADIO_METROS", "500"))
 
 CORS_ORIGINS = [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://corralia-react.vercel.app",
     "https://corralia-react-h0e10gno8-saul-sys07s-projects.vercel.app",
 ]
