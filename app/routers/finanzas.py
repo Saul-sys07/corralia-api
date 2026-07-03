@@ -328,36 +328,36 @@ def get_resumen_semana(fecha: str = None, usuario=Depends(verificar_token)):
     )
 
     gastos_otros = fetch_all(
-        """
-        SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
-        FROM almacen
-        WHERE tipo='entrada'
-        AND DATE(fecha) BETWEEN %s AND %s
-        AND (
-            producto IN (
-                'Gasolina camioneta',
-                'Gasolina bomba',
-                'Medicamento/Vacuna',
-                'Material construcción'
-            )
-            OR producto LIKE 'Otro:%'
+    """
+    SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha, ticket_url
+    FROM almacen
+    WHERE tipo='entrada'
+    AND DATE(fecha) BETWEEN %s AND %s
+    AND (
+        producto IN (
+            'Gasolina camioneta',
+            'Gasolina bomba',
+            'Medicamento/Vacuna',
+            'Material construcción'
         )
-        ORDER BY fecha DESC
-    """,
-        (lunes, domingo),
+        OR producto LIKE 'Otro:%'
     )
+    ORDER BY fecha DESC
+    """,
+    (lunes, domingo),
+)
 
     compras_alimento = fetch_all(
-        """
-        SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha
-        FROM almacen
-        WHERE tipo='entrada'
-        AND DATE(fecha) BETWEEN %s AND %s
-        AND categoria IN ('Ingredientes revoltura', 'Pellet', 'Descuento')
-        ORDER BY fecha DESC
+    """
+    SELECT producto, cantidad, unidad, costo, notas, usuario_id, fecha, ticket_url
+    FROM almacen
+    WHERE tipo='entrada'
+    AND DATE(fecha) BETWEEN %s AND %s
+    AND categoria IN ('Ingredientes revoltura', 'Pellet', 'Descuento')
+    ORDER BY fecha DESC
     """,
-        (lunes, domingo),
-    )
+    (lunes, domingo),
+)
 
     total_depositos = sum(float(d["monto"]) for d in depositos)
     total_ventas = sum(float(v["total_rancho"]) for v in ventas)

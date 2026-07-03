@@ -12,6 +12,7 @@ class CompraItem(BaseModel):
 class CompraRequest(BaseModel):
     items: list[CompraItem]
     descuento: float = 0.0
+    ticket_url: str | None = None
 
 
 class RevolturaRequest(BaseModel):

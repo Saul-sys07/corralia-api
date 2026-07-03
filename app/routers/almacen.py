@@ -69,9 +69,9 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
 
     for item in data.items:
         execute(
-            """INSERT INTO almacen
-               (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha)
-               VALUES ('entrada', %s, %s, %s, %s, %s, %s, %s, %s)""",
+    """INSERT INTO almacen
+       (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha, ticket_url)
+       VALUES ('entrada', %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 item.categoria,
                 item.producto,
@@ -81,6 +81,7 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
                 f"Compra — descuento: ${data.descuento:.2f}",
                 usuario["nombre"],
                 fecha,
+                data.ticket_url,
             ),
         )
 
@@ -97,13 +98,14 @@ def registrar_compra(data: CompraRequest, usuario=Depends(verificar_token)):
     if data.descuento > 0:
         execute(
             """INSERT INTO almacen
-               (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha)
-               VALUES ('entrada', 'Descuento', 'Descuento en compra', 0, 'pieza', %s, %s, %s, %s)""",
+   (tipo, categoria, producto, cantidad, unidad, costo, notas, usuario_id, fecha, ticket_url)
+   VALUES ('entrada', 'Descuento', 'Descuento en compra', 0, 'pieza', %s, %s, %s, %s, %s)""",
             (
                 -data.descuento,
                 "Descuento aplicado a compra",
                 usuario["nombre"],
                 fecha,
+                data.ticket_url,
             ),
         )
 
