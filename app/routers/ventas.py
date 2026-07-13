@@ -187,12 +187,14 @@ def get_historial_ventas(usuario=Depends(verificar_token)):
 @router.get("/ventas/comisiones")
 def get_comisiones(usuario=Depends(verificar_token)):
     return fetch_all("""
-        SELECT u.nombre AS vendedor,
-               COUNT(v.id) AS num_ventas,
-               IFNULL(SUM(v.total_comision), 0) AS total_comision,
-               IFNULL(SUM(v.peso_kg), 0) AS kg_vendidos
+        SELECT 
+            u.nombre AS vendedor,
+            COUNT(v.id) AS num_ventas,
+            IFNULL(SUM(v.total_comision), 0) AS total_comision,
+            IFNULL(SUM(v.peso_kg), 0) AS kg_vendidos
         FROM ventas v
-        JOIN usuarios u ON u.id = v.usuario_id
-        GROUP BY v.usuario_id
+        JOIN clientes c ON c.id = v.cliente_id
+        JOIN usuarios u ON u.id = c.usuario_id
+        GROUP BY c.usuario_id, u.nombre
         ORDER BY total_comision DESC
     """)
