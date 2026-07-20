@@ -13,6 +13,64 @@ def get_precio_dia(usuario=Depends(verificar_token)):
     row = fetch_one("SELECT valor FROM configuracion WHERE clave = 'precio_kg'")
     return {"precio": float(row["valor"]) if row else 48.00}
 
+@router.post("/ventas/preview-comision")
+def preview_comision(data: VentaRequest, usuario=Depends(verificar_token)):
+    cliente = fetch_one(
+        """
+        SELECT c.id, c.usuario_id, c.nombre AS cliente, u.nombre AS vendedor
+        FROM clientes c
+        JOIN usuarios u ON u.id = c.usuario_id
+        WHERE c.id = %s
+        """,
+        (data.cliente_id,),
+    )
+
+    if not cliente:
+        raise HTTPException(status_code=400, detail="Cliente no encontrado")
+
+    comision_config = fetch_one(
+        """
+        SELECT comision_kg
+        FROM comisiones_trabajador
+        WHERE usuario_id = %s
+        AND activo = 1
+        LIMIT 1
+        """,
+        (cliente["usuario_id"],),
+    )
+
+    aplica_comision = data.tipo_animal not in ["Destete", "Desecho"]
+
+    comision_kg = (
+        float(comision_config["comision_kg"])
+        if aplica_comision and comision_config
+        else 0
+    )
+
+    total_comision = (
+        float(data.peso_kg) * comision_kg
+        if aplica_comision
+        else 0
+    )
+
+    if aplica_comision:
+        total_venta = float(data.peso_kg) * float(data.precio_kg)
+        total_rancho = total_venta - total_comision
+    else:
+        total_venta = float(data.total_rancho)
+        total_rancho = float(data.total_rancho)
+
+    return {
+        "cliente": cliente["cliente"],
+        "comision_para": cliente["vendedor"],
+        "tipo_animal": data.tipo_animal,
+        "aplica_comision": aplica_comision,
+        "comision_kg": comision_kg,
+        "total_comision": total_comision,
+        "total_venta": total_venta,
+        "total_rancho": total_rancho,
+    }
+
 
 @router.post("/venta")
 def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
@@ -27,7 +85,7 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
         AND tipo_animal = %s
         AND poblacion_actual > 0
         LIMIT 1
-    """,
+        """,
         (data.id_chiquero, data.tipo_animal),
     )
 
@@ -46,7 +104,7 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
         WHERE id_chiquero = %s
         AND tipo_animal = %s
         AND estado = 'activo'
-    """,
+        """,
         (data.id_chiquero, data.tipo_animal),
     )
 
@@ -74,7 +132,6 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
         and data.tipo_animal != "Desecho"
         and data.precio_kg < precio_minimo_beyin
     ):
-
         raise HTTPException(
             status_code=400,
             detail=f"Beyin no puede vender por debajo de ${precio_minimo_beyin}/kg",
@@ -82,33 +139,78 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
 
     if data.tipo_animal == "Desecho" and data.precio_cabeza <= 0:
         raise HTTPException(
-            status_code=400, detail="Captura un precio pactado válido para Desecho"
+            status_code=400,
+            detail="Captura un precio pactado válido para Desecho",
         )
 
     fecha = hora_mexico()
-    comision_kg = 0 if data.tipo_animal in ["Destete", "Desecho"] else data.comision_kg
-    total_comision = (
-        0 if data.tipo_animal in ["Destete", "Desecho"] else data.total_comision
+
+    cliente = fetch_one(
+        """
+        SELECT c.id, c.usuario_id, u.nombre AS vendedor
+        FROM clientes c
+        JOIN usuarios u ON u.id = c.usuario_id
+        WHERE c.id = %s
+        """,
+        (data.cliente_id,),
     )
+
+    if not cliente:
+        raise HTTPException(status_code=400, detail="Cliente no encontrado")
+
+    comision_config = fetch_one(
+        """
+        SELECT comision_kg
+        FROM comisiones_trabajador
+        WHERE usuario_id = %s
+        AND activo = 1
+        LIMIT 1
+        """,
+        (cliente["usuario_id"],),
+    )
+
+    aplica_comision = data.tipo_animal not in ["Destete", "Desecho"]
+
+    comision_kg = (
+        float(comision_config["comision_kg"])
+        if aplica_comision and comision_config
+        else 0
+    )
+
+    total_comision = (
+        float(data.peso_kg) * comision_kg
+        if aplica_comision
+        else 0
+    )
+
     precio_final = (
         data.precio_cabeza
         if data.es_destete or data.tipo_animal == "Desecho"
         else data.precio_kg
     )
 
+    if aplica_comision:
+        total_rancho = float(data.peso_kg) * float(data.precio_kg) - total_comision
+    else:
+        total_rancho = float(data.total_rancho)
+
     execute_transaction(
         [
             (
-                """UPDATE lotes
-           SET poblacion_actual = poblacion_actual - %s
-           WHERE id = %s""",
+                """
+                UPDATE lotes
+                SET poblacion_actual = poblacion_actual - %s
+                WHERE id = %s
+                """,
                 (data.cantidad, lote_origen["id"]),
             ),
             (
-                """INSERT INTO ventas
-           (cliente_id, usuario_id, tipo_animal, cantidad, peso_kg, precio_kg,
-            comision_kg, total_rancho, total_comision, foto_bascula)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '')""",
+                """
+                INSERT INTO ventas
+                (cliente_id, usuario_id, tipo_animal, cantidad, peso_kg, precio_kg,
+                 comision_kg, total_rancho, total_comision, foto_bascula)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '')
+                """,
                 (
                     data.cliente_id,
                     usuario["id"],
@@ -117,20 +219,22 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
                     data.peso_kg,
                     precio_final,
                     comision_kg,
-                    data.total_rancho,
+                    total_rancho,
                     total_comision,
                 ),
             ),
             (
-                """INSERT INTO historial_movimientos
-           (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
-           VALUES (%s, %s, %s, 'VENTA', %s, %s, %s)""",
+                """
+                INSERT INTO historial_movimientos
+                (id_chiquero_destino, tipo_animal, cantidad, tipo_evento, id_usuario, notas, fecha)
+                VALUES (%s, %s, %s, 'VENTA', %s, %s, %s)
+                """,
                 (
                     data.id_chiquero,
                     data.tipo_animal,
                     data.cantidad,
                     usuario["nombre"],
-                    f"Venta — ${data.total_rancho:,.2f}",
+                    f"Venta — ${total_rancho:,.2f}",
                     fecha,
                 ),
             ),
@@ -138,7 +242,8 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
     )
 
     cliente_actual = fetch_one(
-        "SELECT tipo FROM clientes WHERE id = %s", (data.cliente_id,)
+        "SELECT tipo FROM clientes WHERE id = %s",
+        (data.cliente_id,),
     )
 
     if cliente_actual:
@@ -155,15 +260,17 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
 
     enviar_telegram(
         f"💰 VENTA\n"
-        f"👤 {usuario['nombre']}\n"
+        f"👤 Registró: {usuario['nombre']}\n"
+        f"💵 Comisión para: {cliente['vendedor']}\n"
         f"🐖 {data.cantidad} {data.tipo_animal} — {data.peso_kg}kg\n"
-        f"💵 ${data.total_rancho:,.2f}\n"
+        f"💵 Rancho: ${total_rancho:,.2f}\n"
+        f"💸 Comisión: ${total_comision:,.2f}\n"
         f"🕐 {fecha.strftime('%d/%m/%Y %H:%M')}"
     )
 
     return {
         "ok": True,
-        "mensaje": f"Venta registrada — ${data.total_rancho:,.2f}",
+        "mensaje": f"Venta registrada — ${total_rancho:,.2f}",
     }
 
 
