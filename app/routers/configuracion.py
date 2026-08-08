@@ -13,6 +13,7 @@ from app.schemas.configuracion import (
     CorralEditRequest,
     NuclearRequest,
     SolicitudCorralRequest,
+    ComisionTrabajadorUpdate,
 )
 
 router = APIRouter(tags=["Configuración"])
@@ -35,6 +36,70 @@ def actualizar_precio(precio: float, usuario=Depends(verificar_token)):
 
     return {"ok": True}
 
+@router.get("/configuracion/comisiones-trabajador")
+def get_comisiones_trabajador(usuario=Depends(verificar_token)):
+    if usuario["rol"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede ver comisiones")
+
+    return fetch_all("""
+        SELECT
+            u.id AS usuario_id,
+            u.nombre,
+            u.rol,
+            IFNULL(ct.comision_kg, 0) AS comision_kg,
+            IFNULL(ct.activo, 0) AS activo
+        FROM usuarios u
+        LEFT JOIN comisiones_trabajador ct ON ct.usuario_id = u.id
+        WHERE u.rol != 'admin'
+        ORDER BY u.nombre
+    """)
+
+
+@router.put("/configuracion/comisiones-trabajador/{usuario_id}")
+def actualizar_comision_trabajador(
+    usuario_id: int,
+    data: ComisionTrabajadorUpdate,
+    usuario=Depends(verificar_token),
+):
+    if usuario["rol"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede editar comisiones")
+
+    if data.comision_kg < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La comisión no puede ser negativa",
+        )
+
+    trabajador = fetch_one(
+        "SELECT id, nombre FROM usuarios WHERE id = %s",
+        (usuario_id,),
+    )
+
+    if not trabajador:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+
+    execute(
+        """
+        INSERT INTO comisiones_trabajador
+        (usuario_id, comision_kg, activo, fecha_actualizacion)
+        VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            comision_kg = VALUES(comision_kg),
+            activo = VALUES(activo),
+            fecha_actualizacion = VALUES(fecha_actualizacion)
+        """,
+        (
+            usuario_id,
+            data.comision_kg,
+            1 if data.activo else 0,
+            hora_mexico(),
+        ),
+    )
+
+    return {
+        "ok": True,
+        "mensaje": f"Comisión actualizada para {trabajador['nombre']}",
+    }
 
 @router.get("/configuracion/corrales")
 def get_corrales(usuario=Depends(verificar_token)):

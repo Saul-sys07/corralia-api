@@ -40,3 +40,8 @@ class SolicitudCorralRequest(BaseModel):
     zona: str
     tipo: str = "Comunal"
     notas: str = ""
+
+class ComisionTrabajadorUpdate(BaseModel):
+    comision_kg: float
+    activo: bool = True
+
