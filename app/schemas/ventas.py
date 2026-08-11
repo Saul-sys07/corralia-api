@@ -13,3 +13,4 @@ class VentaRequest(BaseModel):
     total_rancho: float
     total_comision: float
     es_destete: bool
+    foto_bascula: str = ""

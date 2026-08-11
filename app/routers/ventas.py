@@ -1,9 +1,17 @@
+import cloudinary.uploader
+
 from fastapi import APIRouter, Depends, HTTPException
 from database import fetch_one, fetch_all, execute, execute_transaction
 from app.core.security import verificar_token
 from app.core.telegram import enviar_telegram
 from app.core.time import hora_mexico
 from app.schemas.ventas import VentaRequest
+
+from pydantic import BaseModel
+
+
+class FotoBasculaRequest(BaseModel):
+    foto_base64: str
 
 router = APIRouter(tags=["Ventas"])
 
@@ -71,6 +79,23 @@ def preview_comision(data: VentaRequest, usuario=Depends(verificar_token)):
         "total_rancho": total_rancho,
     }
 
+@router.post("/ventas/foto-bascula")
+def subir_foto_bascula(data: FotoBasculaRequest, usuario=Depends(verificar_token)):
+    nombre_foto = (
+        f"corralia/basculas/{usuario['nombre']}_"
+        f"{hora_mexico().date()}_"
+        f"{hora_mexico().strftime('%H%M%S')}"
+    )
+
+    resultado = cloudinary.uploader.upload(
+        f"data:image/jpeg;base64,{data.foto_base64}",
+        public_id=nombre_foto,
+        overwrite=False,
+    )
+
+    url = resultado["secure_url"]
+
+    return {"ok": True, "url": url}
 
 @router.post("/venta")
 def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
@@ -208,8 +233,8 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
                 """
                 INSERT INTO ventas
                 (cliente_id, usuario_id, tipo_animal, cantidad, peso_kg, precio_kg,
-                 comision_kg, total_rancho, total_comision, foto_bascula)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, '')
+                comision_kg, total_rancho, total_comision, foto_bascula)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     data.cliente_id,
@@ -221,6 +246,7 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
                     comision_kg,
                     total_rancho,
                     total_comision,
+                    data.foto_bascula,
                 ),
             ),
             (
@@ -266,6 +292,7 @@ def registrar_venta(data: VentaRequest, usuario=Depends(verificar_token)):
         f"💵 Rancho: ${total_rancho:,.2f}\n"
         f"💸 Comisión: ${total_comision:,.2f}\n"
         f"🕐 {fecha.strftime('%d/%m/%Y %H:%M')}"
+        f"📸 Báscula: {'Sí' if data.foto_bascula else 'No'}\n"
     )
 
     return {
@@ -281,7 +308,8 @@ def get_historial_ventas(usuario=Depends(verificar_token)):
                u.nombre AS registrado_por,
                uc.nombre AS vendedor_cliente,
                v.tipo_animal, v.cantidad,
-               v.peso_kg, v.precio_kg, v.total_rancho, v.total_comision
+               v.peso_kg, v.precio_kg, v.total_rancho, v.total_comision,
+               v.foto_bascula
         FROM ventas v
         JOIN clientes c ON c.id = v.cliente_id
         JOIN usuarios u ON u.id = v.usuario_id
