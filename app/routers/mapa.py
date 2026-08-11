@@ -26,3 +26,33 @@ def get_mapa(usuario=Depends(verificar_token)):
         GROUP BY c.id
         ORDER BY c.zona, CAST(REGEXP_SUBSTR(c.nombre, '[0-9]+') AS UNSIGNED), c.nombre
     """)
+
+
+@router.get("/corrales/{id_chiquero}/historial")
+def get_historial_corral(id_chiquero: int, usuario=Depends(verificar_token)):
+    return fetch_all(
+        """
+        SELECT 
+            h.tipo_evento,
+            h.tipo_animal,
+            h.cantidad,
+            h.notas,
+            h.id_usuario,
+            h.fecha,
+            CONCAT(co.zona, ' ', co.nombre) AS corral_origen,
+            CONCAT(cd.zona, ' ', cd.nombre) AS corral_destino,
+            CASE
+                WHEN h.id_chiquero_origen = %s THEN 'SALIDA'
+                WHEN h.id_chiquero_destino = %s THEN 'ENTRADA'
+                ELSE 'MOVIMIENTO'
+            END AS direccion
+        FROM historial_movimientos h
+        LEFT JOIN chiqueros co ON co.id = h.id_chiquero_origen
+        LEFT JOIN chiqueros cd ON cd.id = h.id_chiquero_destino
+        WHERE h.id_chiquero_origen = %s
+           OR h.id_chiquero_destino = %s
+        ORDER BY h.fecha DESC
+        LIMIT 15
+        """,
+        (id_chiquero, id_chiquero, id_chiquero, id_chiquero),
+    )
